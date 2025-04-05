@@ -286,11 +286,82 @@ class PathFind:
 
         return [] # Путь не найден
 
+def generate_accordion_snake(percentage: int, grid_width: int, grid_height: int) -> Tuple[Deque[Tuple[int, int]], Tuple[int, int]]:
+    """Генерирует начальную позицию змейки 'гармошкой' заданной длины."""
+    target_length = max(1, int((grid_width * grid_height) * percentage / 100))
+
+    # Для 0% или 1 сегмента - стандартное размещение в центре
+    if target_length <= 1:
+         initial_pos = (grid_width // 2, grid_height // 2)
+         # Выбираем случайное начальное направление, не ведущее сразу в стену (если по центру)
+         possible_directions = [UP, DOWN, LEFT, RIGHT]
+         return deque([initial_pos]), random.choice(possible_directions)
+
+    positions = deque()
+    x, y = 1, 1 # Начинаем с (1, 1) для отступа от края
+    direction = RIGHT # Начинаем движение вправо
+    generated_count = 0
+    stuck = False
+
+    # Оставляем буфер по краям (margin = 1)
+    min_x, max_x = 1, grid_width - 2
+    min_y, max_y = 1, grid_height - 2
+
+    while generated_count < target_length:
+        # Проверяем, не вышли ли за пределы безопасной зоны
+        if not (min_x <= x <= max_x and min_y <= y <= max_y):
+            stuck = True
+            print(f"Warning: Accordion generation stuck or hit boundary at ({x},{y}). Generated: {generated_count}/{target_length}")
+            break
+
+        positions.appendleft((x, y))
+        generated_count += 1
+
+        if generated_count >= target_length:
+            break # Достигли нужной длины
+
+        # Вычисляем следующую позицию и направление
+        next_x, next_y = x, y
+        next_direction = direction
+
+        if direction == RIGHT:
+            if x + 1 <= max_x: # Двигаемся вправо
+                next_x = x + 1
+            else: # Достигли правого края, двигаемся вниз
+                if y + 1 <= max_y:
+                    next_y = y + 1
+                    next_direction = LEFT # Меняем направление
+                else: # Не можем двигаться вниз, застряли
+                    stuck = True
+                    break
+        elif direction == LEFT:
+            if x - 1 >= min_x: # Двигаемся влево
+                next_x = x - 1
+            else: # Достигли левого края, двигаемся вниз
+                if y + 1 <= max_y:
+                    next_y = y + 1
+                    next_direction = RIGHT # Меняем направление
+                else: # Не можем двигаться вниз, застряли
+                    stuck = True
+                    break
+
+        x, y = next_x, next_y
+        direction = next_direction
+
+    if not positions: # Если что-то пошло не так и змейка пуста
+        print("Error: Snake generation failed, defaulting to center.")
+        initial_pos = (grid_width // 2, grid_height // 2)
+        return deque([initial_pos]), random.choice([UP, DOWN, LEFT, RIGHT])
+
+    # Важно: 'direction' после цикла содержит направление, КУДА двинулся генератор
+    # для ПОСЛЕДНЕЙ добавленной клетки (головы). Это и есть начальное направление змейки.
+    return positions, direction
+
 class Snake:
-    def __init__(self, mode='manual'):
+    def __init__(self, mode='manual', initial_fill_percentage=0):
         self.length = 1
         initial_pos = ((GRID_WIDTH) // 2, (GRID_HEIGHT) // 2)
-        self.positions: Deque[Tuple[int, int]] = deque([initial_pos]) # Используем deque для эффективности
+        self.positions: Deque[Tuple[int, int]] = deque([initial_pos])
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.color = COLOR_SNAKE
         self.mode = mode
@@ -298,9 +369,22 @@ class Snake:
         self.path = []
         self.path_find = PathFind()
         self.speed = 10
-        # Храним последние 101 состояние (позиции змейки как список, позиция еды) для реплея
         self.history: deque[Tuple[List[Tuple[int, int]], Optional[Tuple[int, int]]]] = deque(maxlen=101)
-        self.current_food_pos = None # Храним текущую позицию еды (нужно для истории и проверки роста)
+        self.current_food_pos = None
+
+        # Применяем начальное заполнение, если оно > 0
+        if initial_fill_percentage > 0:
+            generated_positions, generated_direction = generate_accordion_snake(
+                initial_fill_percentage, GRID_WIDTH, GRID_HEIGHT
+            )
+            if generated_positions:
+                self.positions = generated_positions
+                self.length = len(generated_positions)
+                self.direction = generated_direction
+                self.next_direction = generated_direction
+            else:
+                 print(f"Warning: Failed to generate snake for {initial_fill_percentage}%, starting with default.")
+                 # Оставляем стандартные значения
 
     def draw(self, surface):
         num_segments = len(self.positions)
@@ -620,7 +704,7 @@ class Snake:
 
         return list(sim_snake) # Возвращаем результат симуляции как список
 
-    def reset(self):
+    def reset(self, initial_fill_percentage=0):
         self.length = 1
         initial_pos = ((GRID_WIDTH) // 2, (GRID_HEIGHT) // 2)
         self.positions = deque([initial_pos])
@@ -630,6 +714,20 @@ class Snake:
         self.speed = 10 # Сброс скорости к значению по умолчанию
         self.history.clear() # Очищаем историю ходов
         self.current_food_pos = None
+
+        # Применяем начальное заполнение, если оно > 0
+        if initial_fill_percentage > 0:
+            generated_positions, generated_direction = generate_accordion_snake(
+                initial_fill_percentage, GRID_WIDTH, GRID_HEIGHT
+            )
+            if generated_positions:
+                self.positions = generated_positions
+                self.length = len(generated_positions)
+                self.direction = generated_direction
+                self.next_direction = generated_direction
+            else:
+                 print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
+                 # Оставляем стандартные значения
 
 class Food:
     def __init__(self):
@@ -911,6 +1009,23 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
     back_button_rect = pygame.Rect(0, 0, button_width, button_height)
     back_button_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100)
 
+    # --- Настройка начального заполнения --- 
+    fill_percentages = [0, 5, 15, 30, 50, 80, 95]
+    current_fill_index = 0 # Индекс для 0%
+    fill_label_y = back_button_rect.bottom + 40
+    arrow_button_size = 30
+    arrow_padding = 10
+    # Метка с текстом
+    try:
+        font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
+    except:
+        font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
+    # Кнопка влево
+    left_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
+    # Кнопка вправо
+    right_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
+    # --- Конец настройки --- 
+
     running = True
     while running:
         mouse_pos = pygame.mouse.get_pos()
@@ -953,17 +1068,40 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
         mute_checkbox.draw(surface)
         draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
 
+        # --- Отрисовка выбора начального заполнения --- 
+        fill_percent = fill_percentages[current_fill_index]
+        fill_text = f"Initial Fill: {fill_percent}%"
+        fill_surf = font_small.render(fill_text, True, COLOR_TEXT_WHITE)
+        fill_rect = fill_surf.get_rect(center=(SCREEN_WIDTH // 2, fill_label_y))
+        surface.blit(fill_surf, fill_rect)
+
+        # Позиционируем стрелки относительно текста
+        left_arrow_rect.centery = fill_rect.centery
+        left_arrow_rect.right = fill_rect.left - arrow_padding
+        right_arrow_rect.centery = fill_rect.centery
+        right_arrow_rect.left = fill_rect.right + arrow_padding
+
+        # Рисуем стрелки как кнопки
+        is_left_hovered = left_arrow_rect.collidepoint(mouse_pos)
+        is_right_hovered = right_arrow_rect.collidepoint(mouse_pos)
+        # (Состояние клика обрабатывается в цикле событий)
+        draw_button(surface, left_arrow_rect, COLOR_BUTTON, "<", is_left_hovered, False) # Не показываем клик постоянно
+        draw_button(surface, right_arrow_rect, COLOR_BUTTON, ">", is_right_hovered, False)
+        # --- Конец отрисовки --- 
+
         pygame.display.update()
         clock.tick(60)
 
     # Возвращаем выбранные значения ПОСЛЕ выхода из цикла
     return selected_speed, selected_volume, is_muted
 
-def start_screen(surface) -> Tuple[str, int, int, bool]:
+def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляем int для процента
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
+        font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM) # Добавляем font_small
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
+        font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2) # Добавляем font_small
 
     title_surf = font_title.render("Modern Snake", True, COLOR_TEXT_WHITE)
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
@@ -986,6 +1124,18 @@ def start_screen(surface) -> Tuple[str, int, int, bool]:
     settings_button_rect.center = (SCREEN_WIDTH // 2, auto_button_rect.bottom + button_spacing)
     quit_button_rect.center = (SCREEN_WIDTH // 2, settings_button_rect.bottom + button_spacing)
 
+    # --- Настройка начального заполнения ---
+    fill_percentages = [0, 5, 15, 30, 50, 80, 95]
+    current_fill_index = 0 # Индекс для 0%
+    fill_label_y = quit_button_rect.bottom + 45 # Немного опустим
+    arrow_button_size = 30
+    arrow_padding = 10
+    # Кнопка влево
+    left_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
+    # Кнопка вправо
+    right_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
+    # --- Конец настройки ---
+
     # Словарь для удобного управления кнопками
     buttons = {
         "manual": {"rect": manual_button_rect, "text": "Manual Play", "color": COLOR_BUTTON},
@@ -1005,12 +1155,15 @@ def start_screen(surface) -> Tuple[str, int, int, bool]:
         # Определяем состояния hover и click для всех кнопок динамически
         hover_states = {key: data["rect"].collidepoint(mouse_pos) for key, data in buttons.items()}
         click_states = {key: False for key in buttons} # Сбрасываем состояние клика каждый кадр
+        left_arrow_clicked = False
+        right_arrow_clicked = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                button_clicked = False
                 for key, data in buttons.items():
                     if hover_states[key]: # Если кликнули по кнопке, над которой курсор
                         click_states[key] = True # Устанавливаем флаг клика для отрисовки
@@ -1019,9 +1172,9 @@ def start_screen(surface) -> Tuple[str, int, int, bool]:
 
                         # Выполняем действие в зависимости от нажатой кнопки
                         if key == 'manual':
-                            return 'manual', int(current_speed), int(current_volume), mute
+                            return 'manual', int(current_speed), int(current_volume), mute, fill_percentages[current_fill_index]
                         elif key == 'auto':
-                            return 'auto', int(current_speed), int(current_volume), mute
+                            return 'auto', int(current_speed), int(current_volume), mute, fill_percentages[current_fill_index]
                         elif key == 'settings':
                             # Открываем экран настроек и получаем обновленные значения
                             current_speed, current_volume, mute = settings_screen(surface, current_speed, current_volume, mute)
@@ -1030,8 +1183,22 @@ def start_screen(surface) -> Tuple[str, int, int, bool]:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
                         elif key == 'quit':
                             pygame.quit()
-                            sys.exit()
+                            sys.exit() # Исправляем ошибку линтера
+                        button_clicked = True
                         break # Выходим из цикла по кнопкам, т.к. клик обработан
+
+                # Обрабатываем клики по стрелкам только если не кликнули по основной кнопке
+                if not button_clicked:
+                    if left_arrow_rect.collidepoint(event.pos):
+                        if eat_sound and not mute:
+                           eat_sound.play()
+                        current_fill_index = (current_fill_index - 1) % len(fill_percentages)
+                        left_arrow_clicked = True # Для визуального отклика
+                    elif right_arrow_rect.collidepoint(event.pos):
+                         if eat_sound and not mute:
+                            eat_sound.play()
+                         current_fill_index = (current_fill_index + 1) % len(fill_percentages)
+                         right_arrow_clicked = True # Для визуального отклика
 
         # Отрисовка стартового экрана
         surface.fill(COLOR_BACKGROUND)
@@ -1040,6 +1207,27 @@ def start_screen(surface) -> Tuple[str, int, int, bool]:
         for key, data in buttons.items():
             # Передаем состояния hover и click в функцию отрисовки кнопки
             draw_button(surface, data['rect'], data['color'], data['text'], hover_states[key], click_states[key])
+
+        # --- Отрисовка выбора начального заполнения --- 
+        fill_percent = fill_percentages[current_fill_index]
+        fill_text = f"Initial Fill: {fill_percent}%"
+        fill_surf = font_small.render(fill_text, True, COLOR_TEXT_WHITE)
+        fill_rect = fill_surf.get_rect(center=(SCREEN_WIDTH // 2, fill_label_y))
+        surface.blit(fill_surf, fill_rect)
+
+        # Позиционируем стрелки относительно текста
+        left_arrow_rect.centery = fill_rect.centery
+        left_arrow_rect.right = fill_rect.left - arrow_padding
+        right_arrow_rect.centery = fill_rect.centery
+        right_arrow_rect.left = fill_rect.right + arrow_padding
+
+        # Рисуем стрелки как кнопки
+        is_left_hovered = left_arrow_rect.collidepoint(mouse_pos)
+        is_right_hovered = right_arrow_rect.collidepoint(mouse_pos)
+        # Используем left_arrow_clicked/right_arrow_clicked для подсветки при клике
+        draw_button(surface, left_arrow_rect, COLOR_BUTTON, "<", is_left_hovered, left_arrow_clicked)
+        draw_button(surface, right_arrow_rect, COLOR_BUTTON, ">", is_right_hovered, right_arrow_clicked)
+        # --- Конец отрисовки --- 
 
         pygame.display.update()
         clock.tick(60)
@@ -1119,13 +1307,13 @@ def main():
         font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
 
     # Получаем режим игры и начальные настройки со стартового экрана
-    mode, initial_current_speed, current_volume, mute = start_screen(screen)
+    mode, initial_current_speed, current_volume, mute, fill_percent = start_screen(screen)
     # Применяем начальную громкость
     if eat_sound:
         eat_sound.set_volume(0 if mute else current_volume / 100)
 
     # Инициализация игровых объектов
-    snake = Snake(mode)
+    snake = Snake(mode, initial_fill_percentage=fill_percent)
     snake.speed = initial_current_speed # Устанавливаем скорость, выбранную/сохраненную в меню
     food = Food()
     food.randomize_position(snake_positions=snake.positions)
@@ -1243,7 +1431,7 @@ def main():
 
             if should_restart:
                 # Сброс игры для рестарта
-                snake.reset()
+                snake.reset(initial_fill_percentage=fill_percent)
                 snake.speed = initial_current_speed # Возвращаем скорость из настроек меню
                 food.randomize_position(snake_positions=snake.positions)
                 score = 0
