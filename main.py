@@ -114,12 +114,13 @@ def draw_path(surface, path):
         pass
 
 class Slider:
-    def __init__(self, x, y, width, height, min_val, max_val, initial_val, label):
+    def __init__(self, x, y, width, height, min_val, max_val, initial_val, label, power=1.0): # Добавляем power
         self.rect = pygame.Rect(x, y, width, height)
         self.min_val = min_val
         self.max_val = max_val
         self.value = initial_val
         self.label = label
+        self.power = power # Сохраняем степень
         self.handle_radius = height
         self.handle_width = height
         self.handle_rect = pygame.Rect(0, 0, self.handle_width, self.handle_radius)
@@ -132,9 +133,21 @@ class Slider:
             self.font = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
 
     def update_handle_pos(self):
-        ratio = (self.value - self.min_val) / (self.max_val - self.min_val)
+        """Обновляет позицию ручки на основе текущего значения self.value с учетом self.power."""
+        value_range = self.max_val - self.min_val
+        if value_range == 0:
+             ratio = 0
+        else:
+             # Нормализуем значение от 0 до 1
+             normalized_value = (self.value - self.min_val) / value_range
+             # Ограничиваем значение от 0 до 1 перед возведением в степень (на случай ошибок округления)
+             normalized_value = max(0.0, min(1.0, normalized_value))
+             # Применяем обратную функцию (корень степени power) для получения линейного ratio
+             ratio = normalized_value ** (1.0 / self.power)
+
         handle_center_x = self.rect.x + int(ratio * self.rect.width)
-        self.handle_rect.centerx = handle_center_x
+        # Ограничиваем позицию ручки границами слайдера
+        self.handle_rect.centerx = max(self.rect.x, min(handle_center_x, self.rect.right))
 
     def get_handle_bounds_for_collision(self):
         # Увеличиваем область клика для удобства пользователя
@@ -158,14 +171,42 @@ class Slider:
     def move_handle_to_pos(self, mouse_x):
         mouse_x = max(self.rect.x, min(mouse_x, self.rect.right))
         self.handle_rect.centerx = mouse_x
+        # Линейное соотношение позиции к ширине
         ratio = (self.handle_rect.centerx - self.rect.x) / self.rect.width
-        self.value = self.min_val + ratio * (self.max_val - self.min_val)
+        value_range = self.max_val - self.min_val
+        # Применяем степень power к ratio для нелинейного значения
+        self.value = self.min_val + (ratio ** self.power) * value_range
         # Округляем значение для внутреннего использования и отображения
         self.value = round(self.value)
+        # Убедимся, что значение остается в пределах min/max
+        self.value = max(self.min_val, min(self.value, self.max_val))
 
     def draw(self, surface):
+        # pygame.draw.rect(surface, COLOR_SLIDER_BG, self.rect, border_radius=5)
+        # pygame.draw.rect(surface, COLOR_SLIDER_HANDLE, self.handle_rect, border_radius=3)
+
+        # --- New Drawing Logic: Filling Bar --- 
+        # 1. Draw the background track (full width) - this is the "unfilled" part
         pygame.draw.rect(surface, COLOR_SLIDER_BG, self.rect, border_radius=5)
-        pygame.draw.rect(surface, COLOR_SLIDER_HANDLE, self.handle_rect, border_radius=3)
+
+        # 2. Calculate the width of the filled part using the value ratio
+        value_range = self.max_val - self.min_val
+        if value_range == 0:
+            ratio = 0
+        else:
+            normalized_value = max(0.0, min(1.0, (self.value - self.min_val) / value_range))
+            ratio = normalized_value ** (1.0 / self.power) # Use the same calculation as in update_handle_pos
+
+        filled_width = int(ratio * self.rect.width)
+        filled_width = max(0, min(filled_width, self.rect.width)) # Clamp width
+
+        # 3. Create the rectangle for the filled part
+        if filled_width > 0:
+            filled_rect = pygame.Rect(self.rect.x, self.rect.y, filled_width, self.rect.height)
+            # 4. Draw the filled part using the handle color, with the same border radius
+            pygame.draw.rect(surface, COLOR_SLIDER_HANDLE, filled_rect, border_radius=5)
+        # --- End New Drawing Logic --- 
+
         if self.label:
             label_surf = self.font.render(f"{self.label}: {int(self.value)}", True, COLOR_TEXT)
             label_rect = label_surf.get_rect(midbottom=(self.rect.centerx, self.rect.top - 8))
@@ -998,7 +1039,7 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
     slider_width = 350
     slider_height = 25
     speed_slider = Slider(SCREEN_WIDTH // 2 - slider_width // 2, SCREEN_HEIGHT // 2 - 140,
-                          slider_width, slider_height, 1, 500, current_speed, "Game Speed")
+                          slider_width, slider_height, 1, 500, current_speed, "Game Speed", power=2.0) # Используем power=2.0 для нелинейной скорости
     volume_slider = Slider(SCREEN_WIDTH // 2 - slider_width // 2, SCREEN_HEIGHT // 2 - 60,
                            slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
     checkbox_size = 25
@@ -1295,7 +1336,7 @@ def main():
         score = 0
 
         # --- Переменные для UI панели скорости (сбрасываются для каждой игры) ---
-        speed_panel_visible = False
+        # speed_panel_visible = False # Убрали флаг видимости
         panel_width = 160
         panel_height = 70
         panel_margin_top = 5
@@ -1309,24 +1350,31 @@ def main():
                                    speed_panel_rect.y + slider_margin_top,
                                    speed_panel_rect.width - 2 * slider_margin_h,
                                    slider_height,
-                                   1, 500, snake.speed, "") # Label не нужен
+                                   1, 500, snake.speed, "", # Label не нужен
+                                   power=2.0) # Используем power=2.0 для нелинейной скорости
 
-        icon_text = "SPD"
-        icon_surf = font_icon.render(icon_text, True, COLOR_TEXT_HIGHLIGHT)
-        icon_padding = 8
-        speed_icon_rect = icon_surf.get_rect(topright=(SCREEN_WIDTH - icon_padding, icon_padding))
-        speed_icon_bg_rect = speed_icon_rect.inflate(icon_padding, icon_padding)
+        # --- Убрали код, связанный с иконкой SPD ---
+        # icon_text = "SPD"
+        # icon_surf = font_icon.render(icon_text, True, COLOR_TEXT_HIGHLIGHT)
+        # icon_padding = 8
+        # speed_icon_rect = icon_surf.get_rect(topright=(SCREEN_WIDTH - icon_padding, icon_padding))
+        # speed_icon_bg_rect = speed_icon_rect.inflate(icon_padding, icon_padding)
+        # --- Конец удаления кода иконки ---
 
         # --- Внутренний игровой цикл ---
         game_running = True # Флаг выполнения текущей игры
-        game_controls_active = True # Флаг активности управления змейкой
+        # game_controls_active = True # Флаг активности управления змейкой (теперь зависит от is_panel_hovered)
         while game_running:
             mouse_pos = pygame.mouse.get_pos()
 
-            # Обновляем значение слайдера на панели (если она видима)
-            if speed_panel_visible:
-                 game_speed_slider.value = snake.speed
-                 game_speed_slider.update_handle_pos()
+            # Проверяем, находится ли курсор над панелью скорости
+            is_panel_hovered = speed_panel_rect.collidepoint(mouse_pos)
+            game_controls_active = not is_panel_hovered # Управление неактивно, если курсор над панелью
+
+            # Обновляем значение слайдера на панели
+            # if speed_panel_visible: # Убрали проверку видимости
+            game_speed_slider.value = snake.speed
+            game_speed_slider.update_handle_pos()
 
             # --- Обработка событий ---
             events = pygame.event.get()
@@ -1335,26 +1383,16 @@ def main():
                     pygame.quit()
                     sys.exit() # Завершаем программу при закрытии окна
 
-                # --- Управление панелью скорости ---
+                # --- Управление панелью скорости (всегда активна, но реагирует на hover) ---
                 panel_interaction = False
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if speed_icon_bg_rect.collidepoint(event.pos):
-                        speed_panel_visible = not speed_panel_visible
-                        game_controls_active = not speed_panel_visible
-                        panel_interaction = True
-                    elif speed_panel_visible and speed_panel_rect.collidepoint(event.pos):
-                         game_speed_slider.handle_event(event)
-                         snake.speed = int(game_speed_slider.value)
-                         panel_interaction = True
-                    elif speed_panel_visible and not speed_panel_rect.collidepoint(event.pos):
-                         speed_panel_visible = False
-                         game_controls_active = True
+                # Обрабатываем события слайдера, если курсор над панелью
+                if is_panel_hovered:
+                    if event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+                        game_speed_slider.handle_event(event)
+                        snake.speed = int(game_speed_slider.value)
+                        panel_interaction = True # Было взаимодействие с панелью
 
-                elif event.type in [pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-                    if speed_panel_visible:
-                         game_speed_slider.handle_event(event)
-                         snake.speed = int(game_speed_slider.value)
-                         panel_interaction = True
+                # --- Убрали логику клика по иконке и изменения game_controls_active здесь ---
 
                 # --- Управление игрой (только если активно и не было взаимодействия с панелью) ---
                 elif event.type == pygame.KEYDOWN:
@@ -1411,7 +1449,7 @@ def main():
                     snake.speed = initial_current_speed
                     food.randomize_position(snake_positions=snake.positions)
                     score = 0
-                    speed_panel_visible = False
+                    # speed_panel_visible = False
                     game_controls_active = True
                     # Внутренний цикл game_running продолжится
                 else:
@@ -1443,18 +1481,37 @@ def main():
             food.draw(screen)
             display_statistics(screen, score, snake.length, high_score, snake.speed)
 
-            # Иконка скорости
-            pygame.draw.rect(screen, COLOR_PANEL_BG, speed_icon_bg_rect, border_radius=4)
-            screen.blit(icon_surf, speed_icon_rect)
+            # --- Отрисовка панели скорости (всегда) ---
+            # Иконку больше не рисуем
 
             # Панель скорости
-            if speed_panel_visible:
-                panel_bg_color = COLOR_PANEL_BG[:3] + (180,)
-                pygame.draw.rect(screen, panel_bg_color, speed_panel_rect, border_radius=4)
-                panel_title_surf = font_panel.render("Speed", True, COLOR_TEXT_WHITE)
-                panel_title_rect = panel_title_surf.get_rect(centerx=speed_panel_rect.centerx, top=speed_panel_rect.top + 8)
-                screen.blit(panel_title_surf, panel_title_rect)
-                game_speed_slider.draw(screen)
+            # if speed_panel_visible: # Убрали проверку видимости
+            # Устанавливаем прозрачность фона панели в зависимости от наведения
+            panel_alpha = 255 if is_panel_hovered else 76 # 100% или ~30%
+            panel_bg_color_tuple = COLOR_PANEL_BG[:3] + (panel_alpha,)
+            # Создаем Surface для панели, чтобы применить прозрачность
+            panel_surface = pygame.Surface(speed_panel_rect.size, pygame.SRCALPHA) # SRCALPHA для прозрачного фона по умолчанию
+            # Рисуем фон панели с полной непрозрачностью *на эту поверхность*
+            pygame.draw.rect(panel_surface, panel_bg_color_tuple, panel_surface.get_rect(), border_radius=4)
+
+            # Рисуем заголовок и слайдер НА этой Surface
+            panel_title_surf = font_panel.render("Speed", True, COLOR_TEXT_WHITE)
+            panel_title_rect = panel_title_surf.get_rect(centerx=panel_surface.get_rect().centerx, top=8)
+            panel_surface.blit(panel_title_surf, panel_title_rect)
+
+            # Смещаем слайдер для отрисовки на panel_surface
+            original_slider_rect = game_speed_slider.rect.copy()
+            game_speed_slider.rect.topleft = (slider_margin_h, slider_margin_top)
+            # game_speed_slider.update_handle_pos() # Не нужно здесь, т.к. значение обновляется в цикле
+            game_speed_slider.draw(panel_surface) # Убираем лишний отступ
+            game_speed_slider.rect = original_slider_rect # Восстанавливаем исходный rect для логики
+
+            # Устанавливаем общую прозрачность для всей panel_surface
+            panel_alpha = 255 if is_panel_hovered else 76 # 100% или ~30%
+            panel_surface.set_alpha(panel_alpha)
+
+            # Рисуем готовую панель на основном экране
+            screen.blit(panel_surface, speed_panel_rect.topleft)
 
             pygame.display.update()
             clock.tick(snake.speed)
@@ -1465,6 +1522,9 @@ def main():
 
     # Строка ниже теперь недостижима из-за внешнего 'while True'
     # pygame.quit()
+
+    # Добавляем недостижимый return для исправления ошибки линтера
+    return "", 0, 0, False, 0 # Значения не имеют значения, т.к. код недостижим
 
 if __name__ == '__main__':
     # Инициализация Pygame и Mixer перед использованием их модулей
