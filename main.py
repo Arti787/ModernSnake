@@ -1007,24 +1007,10 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
     button_width = 220
     button_height = 55
     back_button_rect = pygame.Rect(0, 0, button_width, button_height)
-    back_button_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100)
+    # Поднимаем кнопку "Back" немного выше, так как убрали настройку заполнения
+    back_button_rect.center = (SCREEN_WIDTH // 2, mute_checkbox.rect.bottom + 60)
 
-    # --- Настройка начального заполнения --- 
-    fill_percentages = [0, 5, 15, 30, 50, 80, 95]
-    current_fill_index = 0 # Индекс для 0%
-    fill_label_y = back_button_rect.bottom + 40
-    arrow_button_size = 30
-    arrow_padding = 10
-    # Метка с текстом
-    try:
-        font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
-    except:
-        font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
-    # Кнопка влево
-    left_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
-    # Кнопка вправо
-    right_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
-    # --- Конец настройки --- 
+    # --- Удалена настройка начального заполнения --- 
 
     running = True
     while running:
@@ -1068,26 +1054,7 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
         mute_checkbox.draw(surface)
         draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
 
-        # --- Отрисовка выбора начального заполнения --- 
-        fill_percent = fill_percentages[current_fill_index]
-        fill_text = f"Initial Fill: {fill_percent}%"
-        fill_surf = font_small.render(fill_text, True, COLOR_TEXT_WHITE)
-        fill_rect = fill_surf.get_rect(center=(SCREEN_WIDTH // 2, fill_label_y))
-        surface.blit(fill_surf, fill_rect)
-
-        # Позиционируем стрелки относительно текста
-        left_arrow_rect.centery = fill_rect.centery
-        left_arrow_rect.right = fill_rect.left - arrow_padding
-        right_arrow_rect.centery = fill_rect.centery
-        right_arrow_rect.left = fill_rect.right + arrow_padding
-
-        # Рисуем стрелки как кнопки
-        is_left_hovered = left_arrow_rect.collidepoint(mouse_pos)
-        is_right_hovered = right_arrow_rect.collidepoint(mouse_pos)
-        # (Состояние клика обрабатывается в цикле событий)
-        draw_button(surface, left_arrow_rect, COLOR_BUTTON, "<", is_left_hovered, False) # Не показываем клик постоянно
-        draw_button(surface, right_arrow_rect, COLOR_BUTTON, ">", is_right_hovered, False)
-        # --- Конец отрисовки --- 
+        # --- Удалена отрисовка выбора начального заполнения --- 
 
         pygame.display.update()
         clock.tick(60)
@@ -1294,11 +1261,12 @@ def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[
     return dx, dy
 
 def main():
+    # --- Инициализация Pygame и общих ресурсов (выполняется один раз) ---
     pygame.display.set_caption('Modern Snake Game')
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-    # Шрифты для UI в главном цикле
+    # Шрифты для UI (загружаем один раз)
     try:
         font_icon = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         font_panel = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_SMALL)
@@ -1306,188 +1274,197 @@ def main():
         font_icon = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
         font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
 
-    # Получаем режим игры и начальные настройки со стартового экрана
-    mode, initial_current_speed, current_volume, mute, fill_percent = start_screen(screen)
-    # Применяем начальную громкость
-    if eat_sound:
-        eat_sound.set_volume(0 if mute else current_volume / 100)
+    # Сохраняем High Score между играми в рамках одной сессии
+    high_score = 0
 
-    # Инициализация игровых объектов
-    snake = Snake(mode, initial_fill_percentage=fill_percent)
-    snake.speed = initial_current_speed # Устанавливаем скорость, выбранную/сохраненную в меню
-    food = Food()
-    food.randomize_position(snake_positions=snake.positions)
-    score = 0
-    high_score = 0 # TODO: Загружать/сохранять high score?
+    # --- Внешний цикл: возврат в главное меню ---
+    while True:
+        # Получаем режим игры и начальные настройки со стартового экрана
+        # start_screen() сам обрабатывает выход из игры (Quit) через sys.exit()
+        mode, initial_current_speed, current_volume, mute, fill_percent = start_screen(screen)
 
-    # --- Переменные для UI панели скорости ---
-    speed_panel_visible = False
-    panel_width = 160
-    panel_height = 70
-    panel_margin_top = 5
-    panel_margin_right = 5
-    speed_panel_rect = pygame.Rect(SCREEN_WIDTH - panel_width - panel_margin_right, panel_margin_top, panel_width, panel_height)
+        # Применяем начальную громкость
+        if eat_sound:
+            eat_sound.set_volume(0 if mute else current_volume / 100)
 
-    # Слайдер внутри панели скорости
-    slider_margin_h = 15
-    slider_margin_top = 35
-    slider_height = 15
-    game_speed_slider = Slider(speed_panel_rect.x + slider_margin_h,
-                               speed_panel_rect.y + slider_margin_top,
-                               speed_panel_rect.width - 2 * slider_margin_h,
-                               slider_height,
-                               1, 500, snake.speed, "") # Label не нужен у этого слайдера
+        # --- Инициализация игровых объектов (для каждой новой игры) ---
+        snake = Snake(mode, initial_fill_percentage=fill_percent)
+        snake.speed = initial_current_speed # Устанавливаем скорость из меню
+        food = Food()
+        food.randomize_position(snake_positions=snake.positions)
+        score = 0
 
-    # Иконка для открытия/закрытия панели скорости
-    icon_text = "SPD"
-    icon_surf = font_icon.render(icon_text, True, COLOR_TEXT_HIGHLIGHT)
-    icon_padding = 8
-    speed_icon_rect = icon_surf.get_rect(topright=(SCREEN_WIDTH - icon_padding, icon_padding))
-    speed_icon_bg_rect = speed_icon_rect.inflate(icon_padding, icon_padding) # Область клика для иконки
+        # --- Переменные для UI панели скорости (сбрасываются для каждой игры) ---
+        speed_panel_visible = False
+        panel_width = 160
+        panel_height = 70
+        panel_margin_top = 5
+        panel_margin_right = 5
+        speed_panel_rect = pygame.Rect(SCREEN_WIDTH - panel_width - panel_margin_right, panel_margin_top, panel_width, panel_height)
 
-    game_controls_active = True # Флаг: активно ли управление игрой (змейкой)
-    running = True
-    while running:
-        mouse_pos = pygame.mouse.get_pos()
+        slider_margin_h = 15
+        slider_margin_top = 35
+        slider_height = 15
+        game_speed_slider = Slider(speed_panel_rect.x + slider_margin_h,
+                                   speed_panel_rect.y + slider_margin_top,
+                                   speed_panel_rect.width - 2 * slider_margin_h,
+                                   slider_height,
+                                   1, 500, snake.speed, "") # Label не нужен
 
-        # Обновляем значение слайдера на панели (если она видима), чтобы соответствовать snake.speed
-        if speed_panel_visible:
-             game_speed_slider.value = snake.speed
-             game_speed_slider.update_handle_pos()
+        icon_text = "SPD"
+        icon_surf = font_icon.render(icon_text, True, COLOR_TEXT_HIGHLIGHT)
+        icon_padding = 8
+        speed_icon_rect = icon_surf.get_rect(topright=(SCREEN_WIDTH - icon_padding, icon_padding))
+        speed_icon_bg_rect = speed_icon_rect.inflate(icon_padding, icon_padding)
 
-        # --- Обработка событий ---
-        events = pygame.event.get()
-        for event in events:
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+        # --- Внутренний игровой цикл ---
+        game_running = True # Флаг выполнения текущей игры
+        game_controls_active = True # Флаг активности управления змейкой
+        while game_running:
+            mouse_pos = pygame.mouse.get_pos()
 
-            # --- Управление панелью скорости ---
-            panel_interaction = False # Флаг: было ли взаимодействие с панелью в этом событии
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                # Клик по иконке скорости (открыть/закрыть панель)
-                if speed_icon_bg_rect.collidepoint(event.pos):
-                    speed_panel_visible = not speed_panel_visible
-                    game_controls_active = not speed_panel_visible # Деактивируем управление игрой, если панель открыта
-                    panel_interaction = True
-                # Клик внутри видимой панели (взаимодействие со слайдером)
-                elif speed_panel_visible and speed_panel_rect.collidepoint(event.pos):
-                     game_speed_slider.handle_event(event) # Слайдер сам разберется, кликнули по ручке или треку
-                     snake.speed = int(game_speed_slider.value) # Обновляем скорость змейки сразу
-                     panel_interaction = True
-                # Клик вне видимой панели (закрываем панель)
-                elif speed_panel_visible and not speed_panel_rect.collidepoint(event.pos):
-                     speed_panel_visible = False
-                     game_controls_active = True # Активируем управление
+            # Обновляем значение слайдера на панели (если она видима)
+            if speed_panel_visible:
+                 game_speed_slider.value = snake.speed
+                 game_speed_slider.update_handle_pos()
 
-            # Передача событий MOUSEMOTION / MOUSEBUTTONUP слайдеру, если панель видима
-            elif event.type in [pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-                if speed_panel_visible:
-                     # Передаем событие всегда, если панель видима, handle_event проверит dragging
-                     game_speed_slider.handle_event(event)
-                     snake.speed = int(game_speed_slider.value) # Обновляем скорость змейки при движении слайдера
-                     panel_interaction = True # Считаем взаимодействием
+            # --- Обработка событий ---
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit() # Завершаем программу при закрытии окна
 
-            # --- Управление игрой (только если активно и не было взаимодействия с панелью) ---
-            elif event.type == pygame.KEYDOWN:
-                if game_controls_active:
-                     # Пауза
-                     if event.key == pygame.K_p:
-                         pause_screen(screen)
-                         # game_controls_active остается True после паузы
+                # --- Управление панелью скорости ---
+                panel_interaction = False
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if speed_icon_bg_rect.collidepoint(event.pos):
+                        speed_panel_visible = not speed_panel_visible
+                        game_controls_active = not speed_panel_visible
+                        panel_interaction = True
+                    elif speed_panel_visible and speed_panel_rect.collidepoint(event.pos):
+                         game_speed_slider.handle_event(event)
+                         snake.speed = int(game_speed_slider.value)
+                         panel_interaction = True
+                    elif speed_panel_visible and not speed_panel_rect.collidepoint(event.pos):
+                         speed_panel_visible = False
+                         game_controls_active = True
 
-                     # Ручное управление
-                     if snake.mode == 'manual':
-                         if event.key == pygame.K_UP: snake.turn(UP)
-                         elif event.key == pygame.K_DOWN: snake.turn(DOWN)
-                         elif event.key == pygame.K_LEFT: snake.turn(LEFT)
-                         elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
+                elif event.type in [pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+                    if speed_panel_visible:
+                         game_speed_slider.handle_event(event)
+                         snake.speed = int(game_speed_slider.value)
+                         panel_interaction = True
 
-                     # Управление скоростью +/- (для отладки/настройки)
-                     if event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
-                         snake.speed = min(500, snake.speed + 5)
-                         # game_speed_slider.value = snake.speed # Обновится в начале след. кадра
-                     elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
-                         snake.speed = max(1, snake.speed - 5)
-                         # game_speed_slider.value = snake.speed
+                # --- Управление игрой (только если активно и не было взаимодействия с панелью) ---
+                elif event.type == pygame.KEYDOWN:
+                    # *** Обработка ESC для выхода в меню ***
+                    if event.key == pygame.K_ESCAPE:
+                        game_running = False # Устанавливаем флаг выхода из внутреннего цикла
+                        break # Прекращаем обработку событий для этого кадра
 
-        # --- Логика игры ---
-        # Движение змейки происходит всегда, независимо от активности контролов
-        # (AI должен двигаться, даже если панель открыта)
-        collision = snake.move(food.position)
+                    # Остальные клавиши управления игрой
+                    if game_controls_active:
+                         # Пауза
+                         if event.key == pygame.K_p:
+                             pause_screen(screen)
+                         # Ручное управление
+                         if snake.mode == 'manual':
+                             if event.key == pygame.K_UP: snake.turn(UP)
+                             elif event.key == pygame.K_DOWN: snake.turn(DOWN)
+                             elif event.key == pygame.K_LEFT: snake.turn(LEFT)
+                             elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
+                         # Управление скоростью +/-
+                         if event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
+                             snake.speed = min(500, snake.speed + 5)
+                         elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
+                             snake.speed = max(1, snake.speed - 5)
 
-        # --- Обработка коллизии ---
-        if collision:
-            final_history = deque(snake.history) # Копируем историю перед сбросом
-            if score > high_score:
-                high_score = score
+                # Если нажали ESC, выходим из внутреннего цикла немедленно
+                if not game_running:
+                    break
 
-            # Воспроизводим звук поражения, если он есть и звук не выключен
-            if melody_sound and not mute:
-                melody_sound.play()
+            # Если нажали ESC, выходим из внутреннего цикла немедленно
+            if not game_running:
+                break
 
-            # Вызываем экран Game Over / Replay
-            should_restart = game_over_screen(screen, score, snake.length, high_score, int(snake.speed), final_history)
+            # --- Логика игры ---
+            collision = snake.move(food.position)
 
-            if should_restart:
-                # Сброс игры для рестарта
-                snake.reset(initial_fill_percentage=fill_percent)
-                snake.speed = initial_current_speed # Возвращаем скорость из настроек меню
+            # --- Обработка коллизии ---
+            if collision:
+                final_history = deque(snake.history)
+                if score > high_score:
+                    high_score = score
+
+                if melody_sound and not mute:
+                    melody_sound.play()
+
+                # Вызываем экран Game Over / Replay
+                # Он вернет True для рестарта ИЛИ вызовет sys.exit() при нажатии Quit
+                should_restart = game_over_screen(screen, score, snake.length, high_score, int(snake.speed), final_history)
+
+                if should_restart:
+                    # Сброс игры для рестарта (остаемся в ЭТОЙ итерации внешнего цикла)
+                    snake.reset(initial_fill_percentage=fill_percent)
+                    # Восстанавливаем скорость, выбранную в меню для этого запуска
+                    snake.speed = initial_current_speed
+                    food.randomize_position(snake_positions=snake.positions)
+                    score = 0
+                    speed_panel_visible = False
+                    game_controls_active = True
+                    # Внутренний цикл game_running продолжится
+                else:
+                    # Если game_over_screen вернул не True (теоретически не должно случаться
+                    # из-за sys.exit() в кнопке Quit), выйдем из внутреннего цикла
+                    game_running = False
+
+            # --- Обработка поедания еды ---
+            elif snake.get_head_position() == food.position:
+                # Логика роста змейки внутри snake.move_forward()
                 food.randomize_position(snake_positions=snake.positions)
-                score = 0
-                speed_panel_visible = False # Скрываем панель
-                game_controls_active = True # Активируем управление
-            else:
-                # Пользователь выбрал Quit в replay_screen
-                running = False # Завершаем главный цикл
+                if snake.mode == 'auto':
+                     snake.current_food_pos = food.position
 
-        # --- Обработка поедания еды ---
-        elif snake.get_head_position() == food.position:
-            # Логика роста змейки и обновления длины находится внутри snake.move_forward()
-            current_food_pos = food.position # Запоминаем позицию съеденной еды (для истории в след. шаге)
-            food.randomize_position(snake_positions=snake.positions) # Новая еда
-            # Обновляем `current_food_pos` у змейки, если она в авторежиме,
-            # чтобы история записалась корректно на следующем шаге snake.move
-            if snake.mode == 'auto':
-                 snake.current_food_pos = food.position
+                if eat_sound and not mute:
+                    eat_sound.play()
+                score += 10 + int(snake.speed // 10)
+                if score > high_score:
+                    high_score = score
 
-            if eat_sound and not mute:
-                eat_sound.play()
-            score += 10 + int(snake.speed // 10) # Бонус за скорость
-            if score > high_score:
-                high_score = score
+            # --- Отрисовка ---
+            screen.fill(COLOR_BACKGROUND)
+            draw_grid(screen)
 
-        # --- Отрисовка ---
-        screen.fill(COLOR_BACKGROUND)
-        draw_grid(screen)
+            if snake.mode == 'auto' and snake.path:
+                draw_path(screen, snake.path)
 
-        # Отрисовка пути AI, если он есть
-        if snake.mode == 'auto' and snake.path:
-            draw_path(screen, snake.path)
+            snake.draw(screen)
+            food.draw(screen)
+            display_statistics(screen, score, snake.length, high_score, snake.speed)
 
-        snake.draw(screen)
-        food.draw(screen)
-        display_statistics(screen, score, snake.length, high_score, snake.speed)
+            # Иконка скорости
+            pygame.draw.rect(screen, COLOR_PANEL_BG, speed_icon_bg_rect, border_radius=4)
+            screen.blit(icon_surf, speed_icon_rect)
 
-        # Отрисовка иконки скорости (всегда видна)
-        pygame.draw.rect(screen, COLOR_PANEL_BG, speed_icon_bg_rect, border_radius=4)
-        screen.blit(icon_surf, speed_icon_rect)
+            # Панель скорости
+            if speed_panel_visible:
+                panel_bg_color = COLOR_PANEL_BG[:3] + (180,)
+                pygame.draw.rect(screen, panel_bg_color, speed_panel_rect, border_radius=4)
+                panel_title_surf = font_panel.render("Speed", True, COLOR_TEXT_WHITE)
+                panel_title_rect = panel_title_surf.get_rect(centerx=speed_panel_rect.centerx, top=speed_panel_rect.top + 8)
+                screen.blit(panel_title_surf, panel_title_rect)
+                game_speed_slider.draw(screen)
 
-        # Отрисовка панели скорости, если она видима
-        if speed_panel_visible:
-            panel_bg_color = COLOR_PANEL_BG[:3] + (180,) # Используем чуть более прозрачный фон
-            pygame.draw.rect(screen, panel_bg_color, speed_panel_rect, border_radius=4)
-            # Рисуем заголовок панели
-            panel_title_surf = font_panel.render("Speed", True, COLOR_TEXT_WHITE)
-            panel_title_rect = panel_title_surf.get_rect(centerx=speed_panel_rect.centerx, top=speed_panel_rect.top + 8)
-            screen.blit(panel_title_surf, panel_title_rect)
-            # Рисуем сам слайдер
-            game_speed_slider.draw(screen)
+            pygame.display.update()
+            clock.tick(snake.speed)
 
-        pygame.display.update()
-        clock.tick(snake.speed)
+        # --- Конец внутреннего игрового цикла (game_running == False) ---
+        # Внешний цикл 'while True' просто начнется заново, вызвав start_screen()
+        # если только программа не была завершена через sys.exit()
 
-    pygame.quit()
+    # Строка ниже теперь недостижима из-за внешнего 'while True'
+    # pygame.quit()
 
 if __name__ == '__main__':
     # Инициализация Pygame и Mixer перед использованием их модулей
