@@ -28,7 +28,9 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+*.spec # PyInstaller spec files
 
 # Credentials / Sensitive info
 *.env
 *.log
+main.spec
