@@ -792,30 +792,17 @@ class Snake:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
 
 class Food:
-    def __init__(self, grid_width: int, grid_height: int):
+    def __init__(self):
         self.position = (0, 0)
         self.color = COLOR_FOOD
-        self.grid_width = grid_width
-        self.grid_height = grid_height
-        # --- Создаем множество всех клеток один раз при инициализации ---
-        self.all_cells_set = set((x, y) for x in range(grid_width) for y in range(grid_height))
-        # --- Конец изменения ---
         self.randomize_position([]) # Первоначальная рандомизация без змейки
 
-    def randomize_position(self, snake_positions: Union[List[Tuple[int, int]], Deque[Tuple[int, int]]]):
-        # --- Используем множества для быстрого поиска свободной клетки ---
-        snake_positions_set = set(snake_positions)
-        free_cells_set = self.all_cells_set - snake_positions_set
-
-        if free_cells_set:
-            self.position = random.choice(list(free_cells_set))
-        else:
-            # Крайний случай: змейка заполнила всё поле
-            print("Warning: No free cells left to place food!")
-            # Можно оставить старую позицию или выбрать какую-то по умолчанию
-            # self.position = (-1, -1) # Как вариант, чтобы показать проблему
-            pass # Оставляем текущую позицию
-        # --- Конец изменения ---
+    def randomize_position(self, snake_positions: List[Tuple[int, int]] | Deque[Tuple[int, int]]):
+        # Генерируем позицию, пока она не окажется вне тела змейки
+        while True:
+            self.position = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
+            if self.position not in snake_positions:
+                break
 
     def draw(self, surface):
         draw_object(surface, self.color, self.position)
@@ -966,9 +953,7 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
 
     # Вспомогательные объекты для отрисовки состояния из истории
     replay_snake = Snake()
-    # --- Передаем размеры сетки в конструктор Food ---
-    replay_food = Food(GRID_WIDTH, GRID_HEIGHT)
-    # --- Конец изменения ---
+    replay_food = Food()
 
     running = True
     while running:
@@ -1030,7 +1015,7 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
         # Получаем состояние (позиции змейки и еды) для текущего индекса перемотки
         current_snake_positions_list, current_food_pos = history[replay_index]
         replay_snake.positions = deque(current_snake_positions_list) # Используем deque для согласованности с Snake.draw
-        replay_food.randomize_position(snake_positions=current_snake_positions_list) # Скрываем еду, если ее не было в этом состоянии
+        replay_food.position = current_food_pos if current_food_pos else (-1, -1) # Скрываем еду, если ее не было в этом состоянии
 
         # --- Отрисовка экрана реплея ---
         surface.fill(COLOR_BACKGROUND)
@@ -1482,9 +1467,7 @@ def main():
         snake = Snake(mode, initial_fill_percentage=current_fill_percent)
         # Используем initial_current_speed (которое теперь равно обновленному current_speed)
         snake.speed = initial_current_speed 
-        # --- Передаем размеры сетки в конструктор Food ---
-        food = Food(GRID_WIDTH, GRID_HEIGHT)
-        # --- Конец изменения ---
+        food = Food()
         food.randomize_position(snake_positions=snake.positions)
         score = 0
 
@@ -1582,9 +1565,6 @@ def main():
                     snake.reset(initial_fill_percentage=current_fill_percent)
                     # Восстанавливаем скорость, которая была выбрана ДО смерти (или из настроек)
                     snake.speed = initial_current_speed
-                    # --- Передаем размеры сетки в конструктор Food ---
-                    food = Food(GRID_WIDTH, GRID_HEIGHT)
-                    # --- Конец изменения ---
                     food.randomize_position(snake_positions=snake.positions)
                     score = 0
                     game_controls_active = True # Снова активируем управление
