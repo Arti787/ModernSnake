@@ -149,14 +149,33 @@ class Slider:
             if self.get_handle_bounds_for_collision().collidepoint(event.pos):
                 self.dragging = True
                 self.move_handle_to_pos(event.pos[0])
+                # --- Захватываем ввод при начале перетаскивания ---
+                pygame.event.set_grab(True)
+                # --- Конец изменения ---
             elif self.rect.collidepoint(event.pos):
                 self.dragging = True
                 self.move_handle_to_pos(event.pos[0])
+                # --- Захватываем ввод при начале перетаскивания ---
+                pygame.event.set_grab(True)
+                # --- Конец изменения ---
         elif event.type == pygame.MOUSEBUTTONUP:
-            self.dragging = False
+            # Сбрасываем dragging при ЛЮБОМ MOUSEBUTTONUP
+            # --- Добавляем проверку, если вдруг мы не тащили --- 
+            if self.dragging:
+                # --- Освобождаем захват ввода при отпускании кнопки --- 
+                pygame.event.set_grab(False)
+                # --- Конец изменения ---
+                self.dragging = False
         elif event.type == pygame.MOUSEMOTION:
             if self.dragging:
-                self.move_handle_to_pos(event.pos[0])
+                # --- Добавляем проверку реального состояния кнопки мыши --- 
+                mouse_buttons = pygame.mouse.get_pressed()
+                if not mouse_buttons[0]: # Если левая кнопка НЕ нажата
+                    self.dragging = False # Принудительно останавливаем перетаскивание
+                    pygame.event.set_grab(False) # Освобождаем захват на всякий случай
+                else: # Если кнопка все еще нажата, продолжаем перетаскивать
+                    self.move_handle_to_pos(event.pos[0])
+                # --- Конец изменения ---
 
     def move_handle_to_pos(self, mouse_x):
         mouse_x = max(self.rect.x, min(mouse_x, self.rect.right))
@@ -893,8 +912,11 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                # --- Исправляем: используем surface вместо screen --- 
+                if confirmation_dialog(surface, "Quit Game?"):
+                    pygame.quit()
+                    sys.exit()
+                # --- Конец исправления --- 
 
             # Передаем события слайдеру для обработки перетаскивания
             replay_slider.handle_event(event)
@@ -989,7 +1011,9 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
     widget_x = SCREEN_WIDTH // 2 - slider_width // 2
     y_pos = SCREEN_HEIGHT // 2 - 140 # Начальная Y позиция
 
-    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 1, 999, current_speed, "Game Speed", power=2.5)
+    # --- Устанавливаем min_val = 5 для слайдера скорости ---
+    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 999, current_speed, "Game Speed", power=2.5)
+    # --- Конец изменения ---
     y_pos += 70 # Стандартный отступ
 
     volume_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
@@ -1027,8 +1051,11 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                # --- Добавляем подтверждение при закрытии окна --- 
+                if confirmation_dialog(surface, "Quit Game?"):
+                    pygame.quit()
+                    sys.exit()
+                # --- Конец добавления --- 
 
             # Сначала передаем события виджетам (слайдеры, чекбокс)
             speed_slider.handle_event(event)
@@ -1065,6 +1092,11 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
                     if eat_sound:
                         eat_sound.set_volume(0 if is_muted else selected_volume / 100)
                 # --- Конец добавления ---
+            # --- Добавляем выход из настроек по Escape --- 
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False # Выходим из цикла настроек
+            # --- Конец добавления --- 
             # MOUSEBUTTONUP не обрабатываем для кнопки, т.к. действие происходит по нажатию
 
         # Получаем текущие значения из виджетов
@@ -1085,9 +1117,9 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
         fill_slider.draw(surface)
         mute_checkbox.draw(surface)
         draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
-        # --- Добавляем отрисовку кнопки Reset ---
-        draw_button(surface, reset_button_rect, COLOR_TEXT_HIGHLIGHT, "Reset Defaults", is_reset_hovered, is_reset_clicked)
-        # --- Конец добавления ---
+        # --- Изменяем текст кнопки Reset ---
+        draw_button(surface, reset_button_rect, COLOR_TEXT_HIGHLIGHT, "Reset", is_reset_hovered, is_reset_clicked)
+        # --- Конец изменения ---
 
         pygame.display.update()
         clock.tick(60)
@@ -1179,8 +1211,12 @@ def start_screen(surface, initial_speed, initial_volume, initial_mute, initial_f
                             if eat_sound:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
                         elif key == 'quit':
-                            pygame.quit()
-                            sys.exit()
+                            # --- Вызываем диалог подтверждения перед выходом --- 
+                            if confirmation_dialog(surface, "Quit Game?"):
+                                pygame.quit()
+                                sys.exit()
+                            # Если пользователь нажал "No", ничего не делаем
+                            # --- Конец изменения ---
                         button_clicked = True
                         break # Выходим из цикла по кнопкам, т.к. клик обработан
 
@@ -1239,6 +1275,74 @@ def pause_screen(surface):
                 if event.key == pygame.K_p:
                     paused = False
         pygame.time.Clock().tick(15)
+
+# --- Добавляем функцию диалога подтверждения выхода ---
+def confirmation_dialog(surface, question) -> bool:
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    overlay.set_alpha(210) # Сильнее затемнение
+    overlay.fill(COLOR_BACKGROUND)
+    surface.blit(overlay, (0, 0))
+
+    try:
+        font_question = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_LARGE)
+        font_button = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
+    except:
+        font_question = pygame.font.SysFont('arial', FONT_SIZE_LARGE - 2)
+        font_button = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
+
+    question_surf = font_question.render(question, True, COLOR_TEXT_WHITE)
+    question_rect = question_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60))
+    surface.blit(question_surf, question_rect)
+
+    button_width = 150
+    button_height = 50
+    button_spacing = 30
+    yes_button_rect = pygame.Rect(0, 0, button_width, button_height)
+    no_button_rect = pygame.Rect(0, 0, button_width, button_height)
+
+    total_width = button_width * 2 + button_spacing
+    yes_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, question_rect.bottom + 40)
+    no_button_rect.topleft = (yes_button_rect.right + button_spacing, yes_button_rect.top)
+
+    clock = pygame.time.Clock() # Нужен свой clock для цикла диалога
+    while True:
+        mouse_pos = pygame.mouse.get_pos()
+        is_yes_hovered = yes_button_rect.collidepoint(mouse_pos)
+        is_no_hovered = no_button_rect.collidepoint(mouse_pos)
+        is_yes_clicked = False
+        is_no_clicked = False
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # Если пытаются закрыть во время диалога, считаем это отказом
+                return False 
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                     # Escape в диалоге = отказ
+                     return False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if is_yes_hovered:
+                    is_yes_clicked = True
+                    if eat_sound: eat_sound.play()
+                    pygame.time.wait(150) # Небольшая задержка для звука
+                    return True # Подтверждение выхода
+                elif is_no_hovered:
+                    is_no_clicked = True
+                    if eat_sound: eat_sound.play()
+                    pygame.time.wait(150)
+                    return False # Отказ от выхода
+
+        # Перерисовка кнопок в цикле диалога
+        temp_surface = surface.copy() # Копируем фон с текстом вопроса
+        draw_button(temp_surface, yes_button_rect, COLOR_GAMEOVER, "Yes", is_yes_hovered, is_yes_clicked) # Используем цвет Game Over для "Yes"
+        draw_button(temp_surface, no_button_rect, COLOR_BUTTON, "No", is_no_hovered, is_no_clicked)
+        # --- Исправляем: используем surface вместо screen ---
+        surface.blit(temp_surface, (0,0)) # Рисуем обновленный кадр
+        # --- Конец исправления --- 
+
+        pygame.display.update()
+        clock.tick(60)
+# --- Конец добавления функции --- 
 
 def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[int, int]:
     """Вычисляет вектор (dx, dy) от pos1 к pos2, учитывая зацикленность поля."""
@@ -1319,12 +1423,14 @@ def main():
         slider_margin_h = 15
         slider_margin_top = 35
         slider_height = 15
+        # --- Устанавливаем min_val = 5 для игрового слайдера скорости ---
         game_speed_slider = Slider(speed_panel_rect.x + slider_margin_h,
                                    speed_panel_rect.y + slider_margin_top,
                                    speed_panel_rect.width - 2 * slider_margin_h,
                                    slider_height,
-                                   1, 999, snake.speed, "",
+                                   5, 999, snake.speed, "",
                                    power=2.5)
+        # --- Конец изменения ---
 
         # --- Внутренний игровой цикл ---
         game_running = True
@@ -1340,8 +1446,11 @@ def main():
             events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    # --- Добавляем подтверждение при закрытии окна --- 
+                    if confirmation_dialog(screen, "Quit Game?"):
+                        pygame.quit()
+                        sys.exit()
+                    # --- Конец добавления --- 
 
                 panel_interaction = False
                 if is_panel_hovered:
