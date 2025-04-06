@@ -959,9 +959,9 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
     while running:
         mouse_pos = pygame.mouse.get_pos()
         is_retry_hovered = retry_button_rect.collidepoint(mouse_pos)
-        is_quit_hovered = quit_button_rect.collidepoint(mouse_pos)
+        is_main_menu_hovered = quit_button_rect.collidepoint(mouse_pos)
         is_retry_clicked = False
-        is_quit_clicked = False
+        is_main_menu_clicked = False
 
         prev_replay_index = replay_index # Запоминаем индекс до обработки событий
 
@@ -996,12 +996,12 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
                     is_retry_clicked = True
                     if eat_sound: eat_sound.play()
                     return True # Сигнал для рестарта игры
-                elif is_quit_hovered:
-                    is_quit_clicked = True
+                elif is_main_menu_hovered:
+                    is_main_menu_clicked = True
                     if eat_sound:
                         eat_sound.play()
-                    pygame.quit()
-                    sys.exit()
+                    # Instead of quitting, return False to signal going back to main menu
+                    return False
 
         # Обновляем индекс из слайдера, если он изменился
         slider_index = int(replay_slider.value)
@@ -1030,7 +1030,7 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
         # Отрисовка UI (слайдер, кнопки)
         replay_slider.draw(surface)
         draw_button(surface, retry_button_rect, COLOR_BUTTON, "Retry Game", is_retry_hovered, is_retry_clicked)
-        draw_button(surface, quit_button_rect, COLOR_BUTTON, "Quit", is_quit_hovered, is_quit_clicked)
+        draw_button(surface, quit_button_rect, COLOR_BUTTON, "Main Menu", is_main_menu_hovered, is_main_menu_clicked)
 
         # Отрисовка финальной статистики
         y_offset = title_rect.bottom + 15
@@ -1530,6 +1530,12 @@ def main():
                              elif event.key == pygame.K_DOWN: snake.turn(DOWN)
                              elif event.key == pygame.K_LEFT: snake.turn(LEFT)
                              elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
+                            # --- Добавляем управление WASD --- 
+                             elif event.key == pygame.K_w: snake.turn(UP)
+                             elif event.key == pygame.K_s: snake.turn(DOWN)
+                             elif event.key == pygame.K_a: snake.turn(LEFT)
+                             elif event.key == pygame.K_d: snake.turn(RIGHT)
+                            # --- Конец добавления --- 
                          if event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
                              snake.speed = min(5000, snake.speed + 5)
                          elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
