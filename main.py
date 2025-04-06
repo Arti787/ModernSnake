@@ -396,6 +396,10 @@ class Snake:
         self.speed = 10
         self.history: deque[Tuple[List[Tuple[int, int]], Optional[Tuple[int, int]]]] = deque(maxlen=101)
         self.current_food_pos = None
+        # --- Добавляем флаг и хранилище для текущего пути ---
+        self.recalculate_path = True
+        self.current_path: List[Tuple[int, int]] = []
+        # --- Конец добавления ---
 
         # Применяем начальное заполнение, если оно > 0
         if initial_fill_percentage > 0:
@@ -513,32 +517,69 @@ class Snake:
     def auto_move(self, food_pos):
         """Выбор направления и движение вперед в авто-режиме."""
         head = self.get_head_position()
-        path_to_food = self.path_find.find_path(head, food_pos, list(self.positions))
+        new_head_pos = None # Инициализируем
 
-        if path_to_food and self.is_path_safe_to_food(path_to_food):
-            self.path = path_to_food
-            if len(path_to_food) > 1:
-                next_move_pos = path_to_food[1]
+        # --- Логика пересчета пути ---
+        if self.recalculate_path or not self.current_path:
+            path_to_food = self.path_find.find_path(head, food_pos, list(self.positions))
+
+            if path_to_food and self.is_path_safe_to_food(path_to_food):
+                self.current_path = path_to_food
+                self.path = self.current_path # Обновляем path для визуализации
+                self.recalculate_path = False # Путь найден, пока не пересчитываем
+                if len(self.current_path) > 1:
+                    next_move_pos = self.current_path[1]
+                    self.next_direction = self.get_direction_to(next_move_pos)
+                else: # Путь состоит только из головы? Маловероятно, но сохраняем тек. направление
+                    self.next_direction = self.direction
+            else:
+                # Безопасного пути к еде нет, ищем выживание
+                self.current_path = []
+                self.path = [] # Очищаем path для визуализации
+                self.recalculate_path = True # Нужно будет искать путь на след. шаге
+                survival_direction = self.find_survival_move()
+                if survival_direction:
+                    self.next_direction = survival_direction
+                else:
+                    safe_immediate_direction = self.find_immediate_safe_direction()
+                    if safe_immediate_direction:
+                        self.next_direction = safe_immediate_direction
+                    else:
+                        # Полный тупик, сохраняем текущее направление (все равно врежется)
+                        self.next_direction = self.direction
+        else:
+            # Путь уже рассчитан и валиден, следуем ему
+            if len(self.current_path) > 1:
+                next_move_pos = self.current_path[1]
                 self.next_direction = self.get_direction_to(next_move_pos)
             else:
-                self.next_direction = self.direction
-        else:
-            self.path = []
-            survival_direction = self.find_survival_move()
-            if survival_direction:
-                self.next_direction = survival_direction
-            else:
-                safe_immediate_direction = self.find_immediate_safe_direction()
-                if safe_immediate_direction:
-                    self.next_direction = safe_immediate_direction
-                else:
-                    self.next_direction = self.direction
+                # Достигли конца пути (или путь некорректен), запрашиваем пересчет
+                self.recalculate_path = True
+                self.current_path = []
+                self.path = []
+                self.next_direction = self.find_immediate_safe_direction() or self.direction # Пытаемся хоть куда-то
 
+        # --- Выполняем ход ---
         self.direction = self.next_direction
         cur = self.get_head_position()
         x, y = self.direction
         new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
-        return self.move_forward(new_head_pos)
+        collision = self.move_forward(new_head_pos)
+
+        # --- Обновляем current_path после хода (если не было съедено или ошибки) ---
+        # Удаляем узел, ИЗ которого только что вышли (старая голова)
+        if not self.recalculate_path and self.current_path:
+             # Убедимся, что первый элемент - это действительно старая голова
+             if self.current_path[0] == cur:
+                 self.current_path.pop(0)
+             else:
+                 # Если это не так, что-то пошло не так, лучше пересчитать путь
+                 self.recalculate_path = True
+                 self.current_path = []
+                 self.path = []
+
+
+        return collision
 
     def move_forward(self, new_head_pos):
         """Обновляет позицию змейки: добавляет голову, удаляет хвост (если не растет), проверяет коллизии."""
@@ -561,6 +602,11 @@ class Snake:
         elif grows:
              # Если съели еду, увеличиваем целевую длину. Хвост не удаляется в этот раз.
              self.length += 1
+             # --- Запрашиваем пересчет пути, т.к. цель достигнута ---
+             self.recalculate_path = True
+             self.current_path = []
+             self.path = [] # Очищаем и визуализацию
+             # --- Конец изменения ---
 
         return collision
 
@@ -726,6 +772,11 @@ class Snake:
         self.speed = 10
         self.history.clear()
         self.current_food_pos = None
+        # --- Добавляем сброс новых атрибутов ---
+        self.recalculate_path = True
+        self.current_path = []
+        self.path = [] # Очищаем и визуализацию
+        # --- Конец добавления ---
 
         # Применяем начальное заполнение, если оно > 0
         if initial_fill_percentage > 0:
@@ -1016,7 +1067,7 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
     y_pos = SCREEN_HEIGHT // 2 - 140 # Начальная Y позиция
 
     # --- Устанавливаем min_val = 5 для слайдера скорости ---
-    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 999, current_speed, "Game Speed", power=2.5)
+    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed", power=2.5)
     # --- Конец изменения ---
     y_pos += 70 # Стандартный отступ
 
@@ -1434,7 +1485,7 @@ def main():
                                    speed_panel_rect.y + slider_margin_top,
                                    speed_panel_rect.width - 2 * slider_margin_h,
                                    slider_height,
-                                   5, 999, snake.speed, "",
+                                   5, 5000, snake.speed, "",
                                    power=2.5)
         # --- Конец изменения ---
 
@@ -1480,7 +1531,7 @@ def main():
                              elif event.key == pygame.K_LEFT: snake.turn(LEFT)
                              elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
                          if event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
-                             snake.speed = min(999, snake.speed + 5)
+                             snake.speed = min(5000, snake.speed + 5)
                          elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
                              snake.speed = max(1, snake.speed - 5)
 
