@@ -96,6 +96,7 @@ def draw_button(surface, button, base_color, text, is_hovered, is_clicked):
 
     text_surf = font.render(text, True, COLOR_TEXT_WHITE)
     text_rect = text_surf.get_rect(center=button_rect.center)
+    text_rect.centery += 3
     surface.blit(text_surf, text_rect)
 
 def draw_path(surface, path):
@@ -206,15 +207,14 @@ class Checkbox:
     def draw(self, surface):
         pygame.draw.rect(surface, COLOR_CHECKBOX_BORDER, self.rect, border_radius=3, width=2)
         if self.checked:
-            check_margin = 5
-            points = [
-                (self.rect.left + check_margin, self.rect.centery - 2),
-                (self.rect.centerx - check_margin / 3, self.rect.bottom - check_margin + 1),
-                (self.rect.right - check_margin + 2, self.rect.top + check_margin - 2)
-            ]
-            pygame.draw.lines(surface, COLOR_CHECKBOX_CHECK, False, points, 3)
+            check_margin = 4 # Отступ от границы
+            inner_rect = self.rect.inflate(-check_margin * 2, -check_margin * 2)
+            pygame.draw.rect(surface, COLOR_CHECKBOX_CHECK, inner_rect, border_radius=2)
         label_surf = self.font.render(self.label, True, COLOR_TEXT)
-        surface.blit(label_surf, (self.rect.right + 10, self.rect.centery - label_surf.get_height() // 2))
+        label_rect = label_surf.get_rect()
+        label_rect.left = self.rect.right + 10
+        label_rect.centery = self.rect.centery + 3
+        surface.blit(label_surf, label_rect)
 
 class PathFind:
     def __init__(self):
@@ -973,7 +973,7 @@ def game_over_screen(surface, score, snake_length, high_score, current_speed, hi
     # Он вернет True, если пользователь нажал "Retry", иначе False или выход.
     return replay_screen(surface, history, score, high_score)
 
-def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, int, bool]:
+def settings_screen(surface, current_speed, current_volume, mute, current_fill_percent) -> Tuple[int, int, bool, int]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
@@ -985,26 +985,45 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
     # Виджеты настроек
     slider_width = 350
     slider_height = 25
-    speed_slider = Slider(SCREEN_WIDTH // 2 - slider_width // 2, SCREEN_HEIGHT // 2 - 140,
-                          slider_width, slider_height, 1, 999, current_speed, "Game Speed", power=2.5)
-    volume_slider = Slider(SCREEN_WIDTH // 2 - slider_width // 2, SCREEN_HEIGHT // 2 - 60,
-                           slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
     checkbox_size = 25
-    mute_checkbox = Checkbox(SCREEN_WIDTH // 2 - slider_width // 2, SCREEN_HEIGHT // 2 + 20,
-                             checkbox_size, "Mute Sound", mute)
-    button_width = 220
-    button_height = 55
-    back_button_rect = pygame.Rect(0, 0, button_width, button_height)
-    # Поднимаем кнопку "Back" немного выше, так как убрали настройку заполнения
-    back_button_rect.center = (SCREEN_WIDTH // 2, mute_checkbox.rect.bottom + 60)
+    widget_x = SCREEN_WIDTH // 2 - slider_width // 2
+    y_pos = SCREEN_HEIGHT // 2 - 140 # Начальная Y позиция
 
-    # --- Удалена настройка начального заполнения --- 
+    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 1, 999, current_speed, "Game Speed", power=2.5)
+    y_pos += 70 # Стандартный отступ
+
+    volume_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
+    y_pos += 70 # Стандартный отступ
+
+    # --- Меняем порядок: сначала слайдер заполнения ---
+    fill_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 95, current_fill_percent, "Initial Fill (%)")
+    y_pos += 70 # Стандартный отступ
+
+    mute_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Mute Sound", mute)
+    y_pos += 70 # Стандартный отступ перед кнопкой
+
+    button_width = 180 # Уменьшаем ширину кнопок, чтобы поместились две
+    button_height = 55
+    button_spacing = 24 # Расстояние между кнопками
+    # --- Добавляем кнопку Reset Defaults ---
+    reset_button_rect = pygame.Rect(0, 0, button_width, button_height)
+    back_button_rect = pygame.Rect(0, 0, button_width, button_height)
+    
+    # Располагаем кнопки по горизонтали с отступом
+    total_width = 2 * button_width + button_spacing
+    reset_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, y_pos)
+    back_button_rect.topleft = (reset_button_rect.right + button_spacing, y_pos)
+    # --- Конец добавления ---
 
     running = True
     while running:
         mouse_pos = pygame.mouse.get_pos()
         is_back_hovered = back_button_rect.collidepoint(mouse_pos)
         is_back_clicked = False # Сброс состояния клика в начале кадра
+        # --- Добавляем состояния для кнопки Reset ---
+        is_reset_hovered = reset_button_rect.collidepoint(mouse_pos)
+        is_reset_clicked = False # Сброс состояния клика
+        # --- Конец добавления ---
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1014,21 +1033,45 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
             # Сначала передаем события виджетам (слайдеры, чекбокс)
             speed_slider.handle_event(event)
             volume_slider.handle_event(event)
+            fill_slider.handle_event(event)
             mute_checkbox.handle_event(event)
 
-            # Затем проверяем клик по кнопке "Back"
+            # Затем проверяем клик по кнопкам
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if is_back_hovered:
                     is_back_clicked = True
                     if eat_sound:
                         eat_sound.play()
                     running = False # Выходим из цикла настроек
+                # --- Добавляем обработку нажатия на кнопку Reset ---
+                elif is_reset_hovered:
+                    is_reset_clicked = True
+                    if eat_sound:
+                        eat_sound.play()
+                    # Сбрасываем настройки к значениям по умолчанию
+                    selected_speed = 15 # Значение по умолчанию
+                    selected_volume = 1 # Громкость по умолчанию
+                    is_muted = False # Звук включен
+                    selected_fill_percent = 0 # Начальное заполнение 0%
+                    # Обновляем виджеты
+                    speed_slider.value = selected_speed
+                    speed_slider.update_handle_pos()
+                    volume_slider.value = selected_volume
+                    volume_slider.update_handle_pos()
+                    fill_slider.value = selected_fill_percent
+                    fill_slider.update_handle_pos()
+                    mute_checkbox.checked = is_muted
+                    # Применяем громкость немедленно
+                    if eat_sound:
+                        eat_sound.set_volume(0 if is_muted else selected_volume / 100)
+                # --- Конец добавления ---
             # MOUSEBUTTONUP не обрабатываем для кнопки, т.к. действие происходит по нажатию
 
         # Получаем текущие значения из виджетов
         selected_speed = speed_slider.value
         selected_volume = volume_slider.value
         is_muted = mute_checkbox.checked
+        selected_fill_percent = fill_slider.value
 
         # Применяем громкость немедленно
         if eat_sound:
@@ -1039,24 +1082,32 @@ def settings_screen(surface, current_speed, current_volume, mute) -> Tuple[int, 
         surface.blit(title_surf, title_rect)
         speed_slider.draw(surface)
         volume_slider.draw(surface)
+        fill_slider.draw(surface)
         mute_checkbox.draw(surface)
         draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
-
-        # --- Удалена отрисовка выбора начального заполнения --- 
+        # --- Добавляем отрисовку кнопки Reset ---
+        draw_button(surface, reset_button_rect, COLOR_TEXT_HIGHLIGHT, "Reset Defaults", is_reset_hovered, is_reset_clicked)
+        # --- Конец добавления ---
 
         pygame.display.update()
         clock.tick(60)
 
     # Возвращаем выбранные значения ПОСЛЕ выхода из цикла
-    return selected_speed, selected_volume, is_muted
+    # --- Обновляем возвращаемое значение: добавляем selected_fill_percent --- 
+    return selected_speed, selected_volume, is_muted, selected_fill_percent
 
-def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляем int для процента
+def start_screen(surface, initial_speed, initial_volume, initial_mute, initial_fill_percent) -> Tuple[str, int, int, bool, int]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
-        font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM) # Добавляем font_small
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
-        font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2) # Добавляем font_small
+
+    # --- Добавляем font_small, если он отсутствует (на всякий случай) --- 
+    try:
+        font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
+    except:
+        font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
+    # --- Конец добавления --- 
 
     title_surf = font_title.render("Modern Snake", True, COLOR_TEXT_WHITE)
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
@@ -1077,19 +1128,8 @@ def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляе
     manual_button_rect.center = (SCREEN_WIDTH // 2, button_y_start)
     auto_button_rect.center = (SCREEN_WIDTH // 2, manual_button_rect.bottom + button_spacing)
     settings_button_rect.center = (SCREEN_WIDTH // 2, auto_button_rect.bottom + button_spacing)
+    # --- Сдвигаем кнопку Quit выше, т.к. убрали настройку заполнения ---
     quit_button_rect.center = (SCREEN_WIDTH // 2, settings_button_rect.bottom + button_spacing)
-
-    # --- Настройка начального заполнения ---
-    fill_percentages = [0, 5, 15, 30, 50, 80, 95]
-    current_fill_index = 0 # Индекс для 0%
-    fill_label_y = quit_button_rect.bottom + 45 # Немного опустим
-    arrow_button_size = 30
-    arrow_padding = 10
-    # Кнопка влево
-    left_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
-    # Кнопка вправо
-    right_arrow_rect = pygame.Rect(0, 0, arrow_button_size, arrow_button_size)
-    # --- Конец настройки ---
 
     # Словарь для удобного управления кнопками
     buttons = {
@@ -1100,9 +1140,10 @@ def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляе
     }
 
     # Начальные значения настроек (будут изменены, если зайти в Settings)
-    current_speed = 15
-    current_volume = 1 # Громкость по умолчанию (0-100)
-    mute = False
+    current_speed = initial_speed
+    current_volume = initial_volume
+    mute = initial_mute
+    current_fill_percent = initial_fill_percent
     waiting = True
 
     while waiting:
@@ -1110,8 +1151,6 @@ def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляе
         # Определяем состояния hover и click для всех кнопок динамически
         hover_states = {key: data["rect"].collidepoint(mouse_pos) for key, data in buttons.items()}
         click_states = {key: False for key in buttons} # Сбрасываем состояние клика каждый кадр
-        left_arrow_clicked = False
-        right_arrow_clicked = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1127,33 +1166,23 @@ def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляе
 
                         # Выполняем действие в зависимости от нажатой кнопки
                         if key == 'manual':
-                            return 'manual', int(current_speed), int(current_volume), mute, fill_percentages[current_fill_index]
+                            # --- Возвращаем current_fill_percent --- 
+                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent
                         elif key == 'auto':
-                            return 'auto', int(current_speed), int(current_volume), mute, fill_percentages[current_fill_index]
+                            # --- Возвращаем current_fill_percent --- 
+                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent
                         elif key == 'settings':
                             # Открываем экран настроек и получаем обновленные значения
-                            current_speed, current_volume, mute = settings_screen(surface, current_speed, current_volume, mute)
+                            # Передаем ТЕКУЩИЕ значения из start_screen в settings_screen
+                            current_speed, current_volume, mute, current_fill_percent = settings_screen(surface, current_speed, current_volume, mute, current_fill_percent)
                             # Применяем новую громкость сразу после возврата из настроек
                             if eat_sound:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
                         elif key == 'quit':
                             pygame.quit()
-                            sys.exit() # Исправляем ошибку линтера
+                            sys.exit()
                         button_clicked = True
                         break # Выходим из цикла по кнопкам, т.к. клик обработан
-
-                # Обрабатываем клики по стрелкам только если не кликнули по основной кнопке
-                if not button_clicked:
-                    if left_arrow_rect.collidepoint(event.pos):
-                        if eat_sound and not mute:
-                           eat_sound.play()
-                        current_fill_index = (current_fill_index - 1) % len(fill_percentages)
-                        left_arrow_clicked = True # Для визуального отклика
-                    elif right_arrow_rect.collidepoint(event.pos):
-                         if eat_sound and not mute:
-                            eat_sound.play()
-                         current_fill_index = (current_fill_index + 1) % len(fill_percentages)
-                         right_arrow_clicked = True # Для визуального отклика
 
         # Отрисовка стартового экрана
         surface.fill(COLOR_BACKGROUND)
@@ -1163,29 +1192,14 @@ def start_screen(surface) -> Tuple[str, int, int, bool, int]: # Добавляе
             # Передаем состояния hover и click в функцию отрисовки кнопки
             draw_button(surface, data['rect'], data['color'], data['text'], hover_states[key], click_states[key])
 
-        # --- Отрисовка выбора начального заполнения --- 
-        fill_percent = fill_percentages[current_fill_index]
-        fill_text = f"Initial Fill: {fill_percent}%"
-        fill_surf = font_small.render(fill_text, True, COLOR_TEXT_WHITE)
-        fill_rect = fill_surf.get_rect(center=(SCREEN_WIDTH // 2, fill_label_y))
-        surface.blit(fill_surf, fill_rect)
-
-        # Позиционируем стрелки относительно текста
-        left_arrow_rect.centery = fill_rect.centery
-        left_arrow_rect.right = fill_rect.left - arrow_padding
-        right_arrow_rect.centery = fill_rect.centery
-        right_arrow_rect.left = fill_rect.right + arrow_padding
-
-        # Рисуем стрелки как кнопки
-        is_left_hovered = left_arrow_rect.collidepoint(mouse_pos)
-        is_right_hovered = right_arrow_rect.collidepoint(mouse_pos)
-        # Используем left_arrow_clicked/right_arrow_clicked для подсветки при клике
-        draw_button(surface, left_arrow_rect, COLOR_BUTTON, "<", is_left_hovered, left_arrow_clicked)
-        draw_button(surface, right_arrow_rect, COLOR_BUTTON, ">", is_right_hovered, right_arrow_clicked)
-        # --- Конец отрисовки --- 
-
         pygame.display.update()
         clock.tick(60)
+    # --- Добавляем return, чтобы удовлетворить линтер (хотя эта ветка маловероятна) --- 
+    # Этот return не должен достигаться при нормальной работе, 
+    # так как выход происходит через кнопки Manual/Auto/Quit или закрытие окна.
+    # Возвращаем значения по умолчанию или выбрасываем исключение.
+    # --- Возвращаем current_fill_percent по умолчанию --- 
+    return 'manual', 15, 1, False, 0 # Пример значений по умолчанию
 
 def pause_screen(surface):
     # Затемненный оверлей
@@ -1260,15 +1274,38 @@ def main():
         font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
 
     high_score = 0
+    # --- Определяем переменные настроек ЗДЕСЬ, до главного цикла --- 
+    current_speed = 15
+    current_volume = 1 # Громкость по умолчанию (0-100)
+    mute = False
+    current_fill_percent = 0 # Начальное значение по умолчанию
 
     while True:
-        mode, initial_current_speed, current_volume, mute, fill_percent = start_screen(screen)
+        # --- Передаем текущие настройки в start_screen --- 
+        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent = start_screen(
+            screen,
+            current_speed, 
+            current_volume, 
+            mute, 
+            current_fill_percent
+        )
+        # --- Обновляем настройки в main значениями, вернувшимися из start_screen --- 
+        current_speed = updated_speed
+        current_volume = updated_volume
+        mute = updated_mute
+        current_fill_percent = updated_fill_percent
+        # --- Конец обновления --- 
+
+        # --- Используем обновленные настройки для игры --- 
+        initial_current_speed = current_speed # Переименовали для ясности внутри игрового цикла
 
         if eat_sound:
             eat_sound.set_volume(0 if mute else current_volume / 100)
 
-        snake = Snake(mode, initial_fill_percentage=fill_percent)
-        snake.speed = initial_current_speed
+        # Передаем current_fill_percent в конструктор Snake
+        snake = Snake(mode, initial_fill_percentage=current_fill_percent)
+        # Используем initial_current_speed (которое теперь равно обновленному current_speed)
+        snake.speed = initial_current_speed 
         food = Food()
         food.randomize_position(snake_positions=snake.positions)
         score = 0
@@ -1315,8 +1352,9 @@ def main():
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
+                        # --- При выходе из игры через Escape возвращаемся в start_screen --- 
                         game_running = False
-                        break
+                        # Не используем break здесь, чтобы цикл завершился естественным образом
 
                     if game_controls_active:
                          if event.key == pygame.K_p:
@@ -1331,8 +1369,9 @@ def main():
                          elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
                              snake.speed = max(1, snake.speed - 5)
 
+                # --- Проверка game_running перед ходом змейки --- 
                 if not game_running:
-                    break
+                    break # Выходим из игрового цикла, чтобы вернуться в start_screen
 
             if not game_running:
                 break
@@ -1347,15 +1386,24 @@ def main():
                 if melody_sound and not mute:
                     melody_sound.play()
 
-                should_restart = game_over_screen(screen, score, snake.length, high_score, int(snake.speed), final_history)
+                # --- Получаем текущие настройки для передачи в replay/game_over --- 
+                # (Хотя replay_screen их пока не использует, но логично передать)
+                current_speed_on_death = int(snake.speed)
+                # current_volume, mute, current_fill_percent - эти значения не меняются в игровом цикле,
+                # можно использовать те, что были при старте игры.
+
+                should_restart = game_over_screen(screen, score, snake.length, high_score, current_speed_on_death, final_history)
 
                 if should_restart:
-                    snake.reset(initial_fill_percentage=fill_percent)
+                    # --- Передаем current_fill_percent в snake.reset --- 
+                    snake.reset(initial_fill_percentage=current_fill_percent)
+                    # Восстанавливаем скорость, которая была выбрана ДО смерти (или из настроек)
                     snake.speed = initial_current_speed
                     food.randomize_position(snake_positions=snake.positions)
                     score = 0
-                    game_controls_active = True
+                    game_controls_active = True # Снова активируем управление
                 else:
+                    # Если не рестарт, выходим из игрового цикла, чтобы вернуться в start_screen
                     game_running = False
 
             elif snake.get_head_position() == food.position:
