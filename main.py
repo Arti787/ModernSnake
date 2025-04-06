@@ -84,7 +84,10 @@ def draw_button(surface, button, base_color, text, is_hovered, is_clicked):
     if is_clicked:
         button_color = COLOR_BUTTON_CLICK
     elif is_hovered:
-        button_color = COLOR_BUTTON_HOVER
+        # --- Изменяем эффект наведения: делаем кнопку темнее --- 
+        # button_color = COLOR_BUTTON_HOVER
+        button_color = base_color.lerp(COLOR_BACKGROUND, 0.2) # Смешиваем с цветом фона
+        # --- Конец изменения --- 
 
     button_rect = pygame.Rect(button)
     pygame.draw.rect(surface, button_color, button_rect, border_radius=8)
@@ -1180,14 +1183,16 @@ def start_screen(surface, initial_speed, initial_volume, initial_mute, initial_f
 
     while waiting:
         mouse_pos = pygame.mouse.get_pos()
-        # Определяем состояния hover и click для всех кнопок динамически
         hover_states = {key: data["rect"].collidepoint(mouse_pos) for key, data in buttons.items()}
-        click_states = {key: False for key in buttons} # Сбрасываем состояние клика каждый кадр
+        click_states = {key: False for key in buttons}
 
         for event in pygame.event.get():
+            # --- Убедимся, что обработка QUIT здесь есть --- 
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                if confirmation_dialog(surface, "Quit Game?"):
+                    pygame.quit()
+                    sys.exit()
+            # --- Конец проверки --- 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 button_clicked = False
                 for key, data in buttons.items():
