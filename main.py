@@ -397,12 +397,12 @@ class Snake:
         self.speed = 10
         self.history: deque[Tuple[List[Tuple[int, int]], Optional[Tuple[int, int]]]] = deque(maxlen=1001)
         self.current_food_pos = None
-        # --- Добавляем флаг и хранилище для текущего пути ---
         self.recalculate_path = True
         self.current_path: List[Tuple[int, int]] = []
+        # --- Добавляем set для быстрой проверки наличия сегмента ---
+        self.positions_set: set[Tuple[int, int]] = set(self.positions)
         # --- Конец добавления ---
 
-        # Применяем начальное заполнение, если оно > 0
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
                 initial_fill_percentage, GRID_WIDTH, GRID_HEIGHT
@@ -412,6 +412,9 @@ class Snake:
                 self.length = len(generated_positions)
                 self.direction = generated_direction
                 self.next_direction = generated_direction
+                # --- Обновляем set после генерации ---
+                self.positions_set = set(self.positions)
+                # --- Конец обновления ---
             else:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}%, starting with default.")
 
@@ -420,12 +423,15 @@ class Snake:
         if num_segments == 0:
             return
 
-        positions_list = list(self.positions)
-        positions_set = set(positions_list)
+        # --- Убираем создание list и set здесь ---
+        # positions_list = list(self.positions)
+        # positions_set = set(positions_list)
+        # --- Конец уборки ---
 
-        # --- Первый проход: Рисуем сплошные сегменты --- 
+        # --- Первый проход: Рисуем сплошные сегменты (используем self.positions) ---
         # Голова
-        draw_object(surface, COLOR_SNAKE_HEAD, positions_list[0])
+        head_pos = self.positions[0]
+        draw_object(surface, COLOR_SNAKE_HEAD, head_pos)
 
         # Тело и хвост (только цвет, без линий)
         if num_segments > 1:
@@ -433,10 +439,12 @@ class Snake:
             body_color = COLOR_SNAKE
             tail_color = COLOR_SNAKE_TAIL
 
-            for i in range(1, num_segments):
-                current_pos = positions_list[i]
+            # Итерируем напрямую по deque, пропуская голову (i=0)
+            for i, current_pos in enumerate(itertools.islice(self.positions, 1, None)):
                 # Рассчитываем цвет
-                progress = (i - 1) / (num_segments - 1) if num_segments > 1 else 0
+                # Индекс в islice начинается с 0, а нам нужен оригинальный индекс, начиная с 1
+                original_index = i + 1
+                progress = (original_index - 1) / (num_segments - 1) if num_segments > 1 else 0
                 segment_color: pygame.Color = pygame.Color(0, 0, 0)
                 if progress < 0.5:
                     local_progress = progress / 0.5
@@ -446,38 +454,38 @@ class Snake:
                     segment_color = body_color.lerp(tail_color, local_progress)
                 # Рисуем сегмент
                 draw_object(surface, segment_color, current_pos)
-        
-        # --- Второй проход: Рисуем ВНУТРЕННИЕ границы --- 
+
+        # --- Второй проход: Рисуем ВНУТРЕННИЕ границы (используем self.positions и self.positions_set) ---
         if num_segments > 1:
             internal_border_color = COLOR_GRID # Цвет для внутренних линий
             line_width = 1
-            for i in range(num_segments): # Итерируем по ВСЕМ сегментам
-                current_pos = positions_list[i]
+            for i, current_pos in enumerate(self.positions): # Итерируем по ВСЕМ сегментам deque
                 x, y = current_pos
                 x_px, y_px = x * GRIDSIZE, y * GRIDSIZE
 
                 # Определяем фактических соседей по цепочке
-                prev_actual_pos = positions_list[i-1] if i > 0 else None
-                next_actual_pos = positions_list[i+1] if i < num_segments - 1 else None
+                prev_actual_pos = self.positions[i-1] if i > 0 else None
+                # Обращение к i+1 безопасно, если i < num_segments - 1
+                next_actual_pos = self.positions[i+1] if i < num_segments - 1 else None
 
-                # Проверяем соседа СПРАВА
+                # Проверяем соседа СПРАВА (используем self.positions_set для быстрой проверки)
                 neighbor_right = ((x + 1) % GRID_WIDTH, y)
-                if (neighbor_right in positions_set and 
-                    neighbor_right != prev_actual_pos and 
+                if (neighbor_right in self.positions_set and
+                    neighbor_right != prev_actual_pos and
                     neighbor_right != next_actual_pos):
-                    pygame.draw.line(surface, internal_border_color, 
-                                     (x_px + GRIDSIZE - line_width, y_px), 
-                                     (x_px + GRIDSIZE - line_width, y_px + GRIDSIZE -1), 
+                    pygame.draw.line(surface, internal_border_color,
+                                     (x_px + GRIDSIZE - line_width, y_px),
+                                     (x_px + GRIDSIZE - line_width, y_px + GRIDSIZE -1),
                                      line_width)
 
-                # Проверяем соседа СНИЗУ
+                # Проверяем соседа СНИЗУ (используем self.positions_set)
                 neighbor_down = (x, (y + 1) % GRID_HEIGHT)
-                if (neighbor_down in positions_set and
+                if (neighbor_down in self.positions_set and
                     neighbor_down != prev_actual_pos and
                     neighbor_down != next_actual_pos):
-                    pygame.draw.line(surface, internal_border_color, 
-                                     (x_px, y_px + GRIDSIZE - line_width), 
-                                     (x_px + GRIDSIZE - 1, y_px + GRIDSIZE - line_width), 
+                    pygame.draw.line(surface, internal_border_color,
+                                     (x_px, y_px + GRIDSIZE - line_width),
+                                     (x_px + GRIDSIZE - 1, y_px + GRIDSIZE - line_width),
                                      line_width)
 
     def get_head_position(self):
@@ -586,28 +594,44 @@ class Snake:
         """Обновляет позицию змейки: добавляет голову, удаляет хвост (если не растет), проверяет коллизии."""
         collision = False
         # Проверяем коллизию с телом ДО добавления новой головы.
-        # Столкновение с последним сегментом (хвостом) не считается, т.к. он сдвинется.
-        if len(self.positions) > 1:
-            # Используем islice для проверки по всем сегментам, КРОМЕ последнего (хвоста)
-            if new_head_pos in itertools.islice(self.positions, 0, len(self.positions) - 1):
-                     collision = True
+        # Используем self.positions_set для быстрой проверки O(1), кроме хвоста.
+        tail_pos = self.positions[-1] if len(self.positions) > 0 else None
+        if new_head_pos in self.positions_set and new_head_pos != tail_pos:
+             collision = True
 
+        # --- Обновляем set ПЕРЕД изменением deque ---
+        self.positions_set.add(new_head_pos)
+        # --- Конец обновления ---
         self.positions.appendleft(new_head_pos)
 
         # Проверяем, съела ли змейка еду на этом шаге (сравниваем новую голову с позицией еды)
         grows = (new_head_pos == self.current_food_pos)
 
         # Удаляем хвост, если змейка не съела еду на этом шаге
-        if not grows and len(self.positions) > self.length:
-            self.positions.pop()
+        if not grows:
+            # --- Обновляем set ПЕРЕД изменением deque ---
+            # Проверяем, есть ли хвост для удаления
+            if self.positions:
+                removed_tail = self.positions.pop()
+                # Удаляем из set только если это действительно был последний уникальный сегмент хвоста
+                # (на случай, если голова и хвост были в одной клетке - редкий баг)
+                # Однако, deque.pop() удаляет элемент, так что проверка на дубликат не нужна,
+                # если он был в set, он должен быть удален.
+                # Но нужна проверка, что удаляемый хвост вообще есть в set (хотя должен быть).
+                if removed_tail in self.positions_set:
+                     # Дополнительная проверка: не удалять, если этот же сегмент все еще есть в deque
+                     # (это может случиться при длине 1 или при очень коротких замыканиях)
+                     if removed_tail not in self.positions:
+                           self.positions_set.remove(removed_tail)
+                # Если хвоста не было в set, это ошибка, но игнорируем
+            # --- Конец обновления ---
+        # Если змейка растет (grows=True), хвост не удаляется, и set не меняется (кроме добавления головы)
         elif grows:
              # Если съели еду, увеличиваем целевую длину. Хвост не удаляется в этот раз.
              self.length += 1
-             # --- Запрашиваем пересчет пути, т.к. цель достигнута ---
              self.recalculate_path = True
              self.current_path = []
-             self.path = [] # Очищаем и визуализацию
-             # --- Конец изменения ---
+             self.path = []
 
         return collision
 
@@ -782,13 +806,13 @@ class Snake:
         self.speed = 10
         self.history.clear()
         self.current_food_pos = None
-        # --- Добавляем сброс новых атрибутов ---
         self.recalculate_path = True
         self.current_path = []
-        self.path = [] # Очищаем и визуализацию
-        # --- Конец добавления ---
+        self.path = []
+        # --- Обновляем set после сброса ---
+        self.positions_set = set(self.positions)
+        # --- Конец обновления ---
 
-        # Применяем начальное заполнение, если оно > 0
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
                 initial_fill_percentage, GRID_WIDTH, GRID_HEIGHT
@@ -798,6 +822,9 @@ class Snake:
                 self.length = len(generated_positions)
                 self.direction = generated_direction
                 self.next_direction = generated_direction
+                # --- Обновляем set после генерации ---
+                self.positions_set = set(self.positions)
+                # --- Конец обновления ---
             else:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
 
@@ -1476,7 +1503,7 @@ def main():
     current_volume = 1 # Громкость по умолчанию (0-100)
     mute = False
     current_fill_percent = 0 # Начальное значение по умолчанию
-    fps_history: Deque[float] = deque(maxlen=3333)
+    fps_history: Deque[float] = deque(maxlen=2222)
 
     while True:
         # --- Передаем текущие настройки в start_screen --- 
