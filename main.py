@@ -46,6 +46,7 @@ FONT_SIZE_SMALL = 18
 FONT_SIZE_MEDIUM = 24
 FONT_SIZE_LARGE = 36
 FONT_SIZE_XLARGE = 72
+FONT_SIZE_TINY = 14
 
 UP = (0, -1)
 DOWN = (0, 1)
@@ -154,29 +155,29 @@ class Slider:
                 self.dragging = True
                 self.move_handle_to_pos(event.pos[0])
                 # --- Захватываем ввод при начале перетаскивания ---
-                pygame.event.set_grab(True)
+                # pygame.event.set_grab(True) # <<< УБРАНО
                 # --- Конец изменения ---
             elif self.rect.collidepoint(event.pos):
                 self.dragging = True
                 self.move_handle_to_pos(event.pos[0])
                 # --- Захватываем ввод при начале перетаскивания ---
-                pygame.event.set_grab(True)
+                # pygame.event.set_grab(True) # <<< УБРАНО
                 # --- Конец изменения ---
         elif event.type == pygame.MOUSEBUTTONUP:
             # Сбрасываем dragging при ЛЮБОМ MOUSEBUTTONUP
-            # --- Добавляем проверку, если вдруг мы не тащили --- 
+            # --- Добавляем проверку, если вдруг мы не тащили ---
             if self.dragging:
-                # --- Освобождаем захват ввода при отпускании кнопки --- 
-                pygame.event.set_grab(False)
+                # --- Освобождаем захват ввода при отпускании кнопки ---
+                # pygame.event.set_grab(False) # <<< УБРАНО
                 # --- Конец изменения ---
                 self.dragging = False
         elif event.type == pygame.MOUSEMOTION:
             if self.dragging:
-                # --- Добавляем проверку реального состояния кнопки мыши --- 
+                # --- Добавляем проверку реального состояния кнопки мыши ---
                 mouse_buttons = pygame.mouse.get_pressed()
                 if not mouse_buttons[0]: # Если левая кнопка НЕ нажата
                     self.dragging = False # Принудительно останавливаем перетаскивание
-                    pygame.event.set_grab(False) # Освобождаем захват на всякий случай
+                    # pygame.event.set_grab(False) # <<< УБРАНО Освобождаем захват на всякий случай
                 else: # Если кнопка все еще нажата, продолжаем перетаскивать
                     self.move_handle_to_pos(event.pos[0])
                 # --- Конец изменения ---
@@ -394,7 +395,7 @@ class Snake:
         self.path = []
         self.path_find = PathFind()
         self.speed = 10
-        self.history: deque[Tuple[List[Tuple[int, int]], Optional[Tuple[int, int]]]] = deque(maxlen=101)
+        self.history: deque[Tuple[List[Tuple[int, int]], Optional[Tuple[int, int]]]] = deque(maxlen=1001)
         self.current_food_pos = None
         # --- Добавляем флаг и хранилище для текущего пути ---
         self.recalculate_path = True
@@ -1429,6 +1430,30 @@ def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[
 
     return dx, dy
 
+# --- Функция для отрисовки графика FPS ---
+def draw_fps_graph(surface: Surface, history: Deque[float], x: int, y: int, width: int, height: int, color: pygame.Color):
+    """Рисует простой линейный график на основе истории значений."""
+    if not history:
+        return
+    history_len = len(history)
+    max_fps_hist = max(history)
+    dynamic_max_y = max(30.0, max_fps_hist * 1.1)
+ 
+    points = []
+    for i, fps in enumerate(history):
+        normalized_y = 1.0 - max(0.0, min(1.0, fps / dynamic_max_y))
+        point_x = x + int((i / (history_len - 1 if history_len > 1 else 1)) * width)
+        point_y = y + int(normalized_y * height)
+        points.append((point_x, point_y))
+
+    if len(points) >= 2:
+        try:
+            pygame.draw.aalines(surface, color, False, points)
+        except TypeError:
+            pygame.draw.lines(surface, color, False, points, 1)
+    elif len(points) == 1:
+        pygame.draw.circle(surface, color, points[0], 2)
+
 def main():
     # --- Инициализация Pygame и общих ресурсов (выполняется один раз) ---
     pygame.display.set_caption('Modern Snake Game')
@@ -1439,9 +1464,11 @@ def main():
     try:
         font_icon = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         font_panel = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_SMALL)
+        font_tiny = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_TINY)
     except:
         font_icon = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
         font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
+        font_tiny = pygame.font.SysFont('arial', FONT_SIZE_TINY - 1)
 
     high_score = 0
     # --- Определяем переменные настроек ЗДЕСЬ, до главного цикла --- 
@@ -1449,6 +1476,7 @@ def main():
     current_volume = 1 # Громкость по умолчанию (0-100)
     mute = False
     current_fill_percent = 0 # Начальное значение по умолчанию
+    fps_history: Deque[float] = deque(maxlen=3333)
 
     while True:
         # --- Передаем текущие настройки в start_screen --- 
@@ -1498,12 +1526,18 @@ def main():
                                    power=2.5)
         # --- Конец изменения ---
 
+        # --- Инициализируем panel_alpha перед циклом --- 
+        panel_alpha = 76 # Начальное значение (не наведено)
+
         # --- Внутренний игровой цикл ---
         game_running = True
         while game_running:
+            # --- Получаем позицию мыши и вычисляем panel_alpha в начале кадра --- 
             mouse_pos = pygame.mouse.get_pos()
-
             is_panel_hovered = speed_panel_rect.collidepoint(mouse_pos)
+            panel_alpha = 255 if is_panel_hovered else 76
+            # --- Конец вычислений --- 
+
             game_controls_active = not is_panel_hovered
 
             game_speed_slider.value = snake.speed
@@ -1608,8 +1642,80 @@ def main():
             food.draw(screen)
             display_statistics(screen, score, snake.length, high_score, snake.speed)
 
-            panel_alpha = 255 if is_panel_hovered else 76
-            panel_bg_color_tuple = COLOR_PANEL_BG[:3] + (panel_alpha,)
+            # --- Обновляем историю и рисуем график FPS ---
+            current_fps = clock.get_fps()
+            fps_history.append(current_fps)
+
+            # --- Параметры для графика и текста --- 
+            graph_width = 100 # Возвращаем ширину графика
+            text_width = 45   # Чуть больше места для текста
+            padding = 5       # Отступ между графиком и текстом
+            total_width = graph_width + padding + text_width # Общая ширина
+            graph_height = 50 # Делаем виджет чуть выше
+            margin_right = 10
+            margin_bottom = 10
+
+            # --- Координаты всего виджета FPS ---
+            widget_x = SCREEN_WIDTH - total_width - margin_right
+            widget_y = SCREEN_HEIGHT - graph_height - margin_bottom
+            fps_widget_rect = pygame.Rect(widget_x, widget_y, total_width, graph_height)
+
+            # --- Координаты для составных частей внутри виджета ---
+            # --- Теперь координаты относительно НУЛЯ, т.к. рисуем на отдельной поверхности ---
+            graph_x_rel = 0 # Относительно fps_widget_surface
+            graph_y_rel = 0 # Относительно fps_widget_surface
+            text_x_rel = graph_width + padding # Относительно fps_widget_surface
+            text_y_rel = 0 # Относительно fps_widget_surface
+            # --- Конец изменения относительных координат ---
+
+            # --- Определяем прозрачность виджета FPS (при наведении на него) ---
+            is_fps_widget_hovered = fps_widget_rect.collidepoint(mouse_pos)
+            fps_widget_alpha = 255 if is_fps_widget_hovered else 76
+            # --- Цвет фона теперь берем без альфа-канала сначала ---
+            fps_bg_color_opaque = COLOR_PANEL_BG
+
+            # --- Создаем отдельную поверхность для виджета FPS ---
+            fps_widget_surface = pygame.Surface(fps_widget_rect.size, pygame.SRCALPHA)
+
+            # --- Рисуем единый фон для всего виджета FPS НА ОТДЕЛЬНОЙ ПОВЕРХНОСТИ (НЕПРОЗРАЧНЫМ ЦВЕТОМ) ---
+            pygame.draw.rect(fps_widget_surface, fps_bg_color_opaque, fps_widget_surface.get_rect(), border_radius=4)
+
+            # --- Рисуем сам график НА ОТДЕЛЬНОЙ ПОВЕРХНОСТИ ---
+            # Передаем ОТНОСИТЕЛЬНЫЕ координаты и размеры ГРАФИКА
+            draw_fps_graph(fps_widget_surface, fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=COLOR_TEXT_HIGHLIGHT)
+
+            # --- Рисуем текст справа от графика НА ОТДЕЛЬНОЙ ПОВЕРХНОСТИ ---
+            if fps_history:
+                min_fps = min(fps_history)
+                max_fps_hist = max(fps_history)
+                avg_fps = sum(fps_history) / len(fps_history)
+                text_margin_in_area = 3
+
+                # Max FPS
+                max_text_surf = font_tiny.render(f"{max_fps_hist:.0f}", True, COLOR_TEXT)
+                # --- Используем относительные координаты ---
+                max_text_rect = max_text_surf.get_rect(topright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + text_margin_in_area))
+                fps_widget_surface.blit(max_text_surf, max_text_rect)
+                # Avg FPS
+                avg_text_surf = font_tiny.render(f"{avg_fps:.0f}", True, COLOR_TEXT)
+                # --- Используем относительные координаты ---
+                avg_text_rect = avg_text_surf.get_rect(midright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height // 2))
+                fps_widget_surface.blit(avg_text_surf, avg_text_rect)
+                # Min FPS
+                min_text_surf = font_tiny.render(f"{min_fps:.0f}", True, COLOR_TEXT)
+                # --- Используем относительные координаты ---
+                min_text_rect = min_text_surf.get_rect(bottomright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height - text_margin_in_area))
+                fps_widget_surface.blit(min_text_surf, min_text_rect)
+            # --- Конец блока FPS ---
+
+            # --- Устанавливаем общую прозрачность для всей поверхности виджета FPS ---
+            fps_widget_surface.set_alpha(fps_widget_alpha)
+
+            # --- Копируем готовую поверхность FPS виджета на основной экран ---
+            screen.blit(fps_widget_surface, fps_widget_rect.topleft)
+
+            # --- Теперь рисуем панель скорости ПОСЛЕ графика FPS ---
+            panel_bg_color_tuple = (COLOR_PANEL_BG.r, COLOR_PANEL_BG.g, COLOR_PANEL_BG.b, panel_alpha)
             panel_surface = pygame.Surface(speed_panel_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(panel_surface, panel_bg_color_tuple, panel_surface.get_rect(), border_radius=4)
 
@@ -1622,7 +1728,6 @@ def main():
             game_speed_slider.draw(panel_surface)
             game_speed_slider.rect = original_slider_rect
 
-            panel_alpha = 255 if is_panel_hovered else 76
             panel_surface.set_alpha(panel_alpha)
 
             screen.blit(panel_surface, speed_panel_rect.topleft)
