@@ -699,7 +699,16 @@ class Snake:
             sim_tail = sim_snake_list[-1]
             path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
 
-            freedom = len(path_to_tail)
+            # --- Изменяем метрику оценки хода ---
+            # freedom = len(path_to_tail) # Старая метрика
+            # Новая метрика: длина пути + 0.5 * эвристическое расстояние до хвоста
+            # Это должно сильнее отталкивать от хвоста
+            if path_to_tail:
+                 freedom = len(path_to_tail) + self.path_find._heuristic(sim_head, sim_tail) * 0.5
+            else:
+                 # Если пути до хвоста нет, свобода минимальна, но все же попробуем учесть расстояние
+                 freedom = self.path_find._heuristic(sim_head, sim_tail) * 0.2 
+            # --- Конец изменения ---
 
             # Обновляем лучший ход, если текущий дает больше свободы
             if freedom > max_freedom:
