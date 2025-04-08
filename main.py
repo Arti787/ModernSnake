@@ -71,6 +71,10 @@ except pygame.error:
     melody_sound = None
     print(f"Warning: Sound file '{melody_sound_path}' not found or cannot be loaded.")
 
+# --- Константа для режима выживания ---
+SURVIVAL_MODE_DURATION = 100 # Количество шагов в режиме выживания
+# --- Конец добавления ---
+
 def draw_object(surface, color, pos):
     rect = pygame.Rect((pos[0] * GRIDSIZE, pos[1] * GRIDSIZE), (GRIDSIZE, GRIDSIZE))
     pygame.draw.rect(surface, color, rect)
@@ -402,6 +406,9 @@ class Snake:
         # --- Добавляем set для быстрой проверки наличия сегмента ---
         self.positions_set: set[Tuple[int, int]] = set(self.positions)
         # --- Конец добавления ---
+        # --- Добавляем атрибут для режима выживания ---
+        self.survival_mode_steps_remaining = 0
+        # --- Конец добавления ---
 
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
@@ -504,80 +511,113 @@ class Snake:
     def move(self, food_pos):
         """Основная функция движения: выбирает направление (если авто) и делает ход."""
         self.current_food_pos = food_pos
-        self.direction = self.next_direction
+        # self.direction = self.next_direction # Устанавливается внутри auto_move/manual_move
         collision = False
         if self.mode == 'auto':
             collision = self.auto_move(food_pos)
         else:
-            collision = self.manual_move()
+            collision = self.manual_move() # Ручной ход не меняется
 
-        if self.positions:
-             self.history.append((list(self.positions), self.current_food_pos))
+        # Запись в историю должна быть после фактического хода (в move_forward)
+        # if self.positions:
+        #      self.history.append((list(self.positions), self.current_food_pos))
 
         return collision
 
     def manual_move(self):
-        """Движение вперед в ручном режиме на основе self.direction."""
+        """Движение вперед в ручном режиме на основе self.next_direction."""
+        self.direction = self.next_direction # Обновляем текущее направление
         cur = self.get_head_position()
         x, y = self.direction
-        new = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
-        return self.move_forward(new)
+        new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
+        return self.move_forward(new_head_pos)
 
     def auto_move(self, food_pos):
         """Выбор направления и движение вперед в авто-режиме."""
         head = self.get_head_position()
-        new_head_pos = None # Инициализируем
 
-        # --- Логика пересчета пути ---
-        if self.recalculate_path or not self.current_path:
-            path_to_food = self.path_find.find_path(head, food_pos, list(self.positions))
+        # --- Логика режима выживания ---
+        if self.survival_mode_steps_remaining > 0:
+            self.survival_mode_steps_remaining -= 1
+            # Ищем лучший безопасный ход прямо сейчас
+            survival_direction = self.find_survival_move()
+            if not survival_direction:
+                survival_direction = self.find_immediate_safe_direction()
 
-            if path_to_food and self.is_path_safe_to_food(path_to_food):
-                self.current_path = path_to_food
-                self.path = self.current_path # Обновляем path для визуализации
-                self.recalculate_path = False # Путь найден, пока не пересчитываем
-                if len(self.current_path) > 1:
-                    next_move_pos = self.current_path[1]
-                    self.next_direction = self.get_direction_to(next_move_pos)
-                else: # Путь состоит только из головы? Маловероятно, но сохраняем тек. направление
-                    self.next_direction = self.direction
+            if survival_direction:
+                self.next_direction = survival_direction
             else:
-                # Безопасного пути к еде нет, ищем выживание
-                self.current_path = []
-                self.path = [] # Очищаем path для визуализации
-                self.recalculate_path = True # Нужно будет искать путь на след. шаге
-                survival_direction = self.find_survival_move()
-                if survival_direction:
-                    self.next_direction = survival_direction
-                else:
-                    safe_immediate_direction = self.find_immediate_safe_direction()
-                    if safe_immediate_direction:
-                        self.next_direction = safe_immediate_direction
-                    else:
-                        # Полный тупик, сохраняем текущее направление (все равно врежется)
-                        self.next_direction = self.direction
+                # Полный тупик, двигаемся по текущему (все равно врежемся)
+                self.next_direction = self.direction
+
+            # Очищаем пути, т.к. мы не следуем к еде
+            self.current_path = []
+            self.path = [] # Для визуализации
+            self.recalculate_path = False # Не ищем путь к еде в режиме выживания
+
+        # --- Обычная логика поиска пути (если не в режиме выживания) ---
         else:
-            # Путь уже рассчитан и валиден, следуем ему
-            if len(self.current_path) > 1:
-                next_move_pos = self.current_path[1]
-                self.next_direction = self.get_direction_to(next_move_pos)
-            else:
-                # Достигли конца пути (или путь некорректен), запрашиваем пересчет
-                self.recalculate_path = True
-                self.current_path = []
-                self.path = []
-                self.next_direction = self.find_immediate_safe_direction() or self.direction # Пытаемся хоть куда-то
+            # Если путь не рассчитан или нужно пересчитать
+            if self.recalculate_path or not self.current_path:
+                path_to_food = self.path_find.find_path(head, food_pos, list(self.positions))
 
-        # --- Выполняем ход ---
+                # Если путь найден и безопасен
+                if path_to_food and self.is_path_safe_to_food(path_to_food):
+                    self.current_path = path_to_food
+                    self.path = self.current_path # Обновляем path для визуализации
+                    self.recalculate_path = False # Путь найден, пока не пересчитываем
+                    if len(self.current_path) > 1:
+                        self.next_direction = self.get_direction_to(self.current_path[1])
+                    else: # Путь короткий, сохраняем тек. направление
+                        self.next_direction = self.direction
+
+                # Если путь не найден или небезопасен
+                else:
+                    self.current_path = [] # Сбрасываем текущий путь
+                    self.path = []       # Сбрасываем визуализацию
+                    survival_direction = self.find_survival_move()
+
+                    # Если нашли ход для выживания
+                    if survival_direction:
+                        self.next_direction = survival_direction
+                        # --- Активируем режим выживания ---
+                        self.survival_mode_steps_remaining = SURVIVAL_MODE_DURATION
+                        self.recalculate_path = False # Не пересчитывать путь к еде немедленно
+                        # --- Конец активации ---
+                    # Если ход для выживания не найден
+                    else:
+                        safe_immediate_direction = self.find_immediate_safe_direction()
+                        if safe_immediate_direction:
+                            self.next_direction = safe_immediate_direction
+                        else:
+                            # Полный тупик, сохраняем текущее направление
+                            self.next_direction = self.direction
+                        # В тупике все равно нужно пытаться найти путь на след. шаге
+                        self.recalculate_path = True
+
+            # Если путь уже рассчитан и валиден, следуем ему
+            else: # not self.recalculate_path and self.current_path
+                if len(self.current_path) > 1:
+                    self.next_direction = self.get_direction_to(self.current_path[1])
+                else:
+                    # Достигли конца пути (или путь некорректен), запрашиваем пересчет
+                    self.recalculate_path = True
+                    self.current_path = []
+                    self.path = []
+                    # Пытаемся найти безопасный ход на этот шаг, пока идет пересчет
+                    self.next_direction = self.find_immediate_safe_direction() or self.direction
+
+        # --- Выполняем ход на основе выбранного self.next_direction ---
         self.direction = self.next_direction
         cur = self.get_head_position()
         x, y = self.direction
         new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
         collision = self.move_forward(new_head_pos)
 
-        # --- Обновляем current_path после хода (если не было съедено или ошибки) ---
+        # --- Обновляем current_path после хода (если мы следовали пути) ---
         # Удаляем узел, ИЗ которого только что вышли (старая голова)
-        if not self.recalculate_path and self.current_path:
+        # Делаем это только если НЕ в режиме выживания и НЕ было коллизии/еды
+        if self.survival_mode_steps_remaining == 0 and not self.recalculate_path and self.current_path and not collision:
              # Убедимся, что первый элемент - это действительно старая голова
              if self.current_path[0] == cur:
                  self.current_path.pop(0)
@@ -587,51 +627,45 @@ class Snake:
                  self.current_path = []
                  self.path = []
 
-
         return collision
 
     def move_forward(self, new_head_pos):
         """Обновляет позицию змейки: добавляет голову, удаляет хвост (если не растет), проверяет коллизии."""
         collision = False
-        # Проверяем коллизию с телом ДО добавления новой головы.
-        # Используем self.positions_set для быстрой проверки O(1), кроме хвоста.
         tail_pos = self.positions[-1] if len(self.positions) > 0 else None
         if new_head_pos in self.positions_set and new_head_pos != tail_pos:
              collision = True
 
-        # --- Обновляем set ПЕРЕД изменением deque ---
+        # --- Запись в историю ДО изменения позиций ---
+        # Сохраняем копию текущего состояния ПЕРЕД ходом
+        history_positions = list(self.positions)
+        history_food_pos = self.current_food_pos # Еда, которая БЫЛА на поле до этого хода
+        # --- Конец записи в историю ---
+
         self.positions_set.add(new_head_pos)
-        # --- Конец обновления ---
         self.positions.appendleft(new_head_pos)
 
-        # Проверяем, съела ли змейка еду на этом шаге (сравниваем новую голову с позицией еды)
         grows = (new_head_pos == self.current_food_pos)
 
-        # Удаляем хвост, если змейка не съела еду на этом шаге
         if not grows:
-            # --- Обновляем set ПЕРЕД изменением deque ---
-            # Проверяем, есть ли хвост для удаления
             if self.positions:
                 removed_tail = self.positions.pop()
-                # Удаляем из set только если это действительно был последний уникальный сегмент хвоста
-                # (на случай, если голова и хвост были в одной клетке - редкий баг)
-                # Однако, deque.pop() удаляет элемент, так что проверка на дубликат не нужна,
-                # если он был в set, он должен быть удален.
-                # Но нужна проверка, что удаляемый хвост вообще есть в set (хотя должен быть).
                 if removed_tail in self.positions_set:
-                     # Дополнительная проверка: не удалять, если этот же сегмент все еще есть в deque
-                     # (это может случиться при длине 1 или при очень коротких замыканиях)
                      if removed_tail not in self.positions:
                            self.positions_set.remove(removed_tail)
-                # Если хвоста не было в set, это ошибка, но игнорируем
-            # --- Конец обновления ---
-        # Если змейка растет (grows=True), хвост не удаляется, и set не меняется (кроме добавления головы)
         elif grows:
-             # Если съели еду, увеличиваем целевую длину. Хвост не удаляется в этот раз.
              self.length += 1
+             # --- При поедании еды сбрасываем режим выживания и запрашиваем пересчет ---
+             self.survival_mode_steps_remaining = 0
              self.recalculate_path = True
-             self.current_path = []
+             # --- Конец изменений при поедании ---
+             self.current_path = [] # Путь к старой еде больше не валиден
              self.path = []
+
+        # --- Добавляем запись в историю ПОСЛЕ определения коллизии и роста ---
+        # Записываем состояние, которое было ДО этого хода
+        self.history.append((history_positions, history_food_pos))
+        # --- Конец добавления записи в историю ---
 
         return collision
 
@@ -803,15 +837,16 @@ class Snake:
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.next_direction = self.direction
         self.path = []
-        self.speed = 10
+        self.speed = 10 # Сброс скорости к дефолту? Или сохранять выбранную? Пока сброс.
         self.history.clear()
         self.current_food_pos = None
         self.recalculate_path = True
         self.current_path = []
         self.path = []
-        # --- Обновляем set после сброса ---
         self.positions_set = set(self.positions)
-        # --- Конец обновления ---
+        # --- Сбрасываем режим выживания ---
+        self.survival_mode_steps_remaining = 0
+        # --- Конец сброса ---
 
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
@@ -940,7 +975,7 @@ def button_animation(surface, button, color, text):
         pygame.display.update(button_rect) # Обновляем только область кнопки для производительности
         pygame.time.Clock().tick(60)
 
-def replay_screen(surface, history: deque, final_score: int, high_score: int):
+def replay_screen(surface, clock, history: deque, final_score: int, high_score: int):
     """Экран перемотки последних ходов после Game Over."""
     if not history:
         return False # Нет истории для показа, возвращаем False (не перезапускать)
@@ -1005,10 +1040,11 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 # --- Исправляем: используем surface вместо screen --- 
-                if confirmation_dialog(surface, "Quit Game?"):
+                # --- Передаем clock в confirmation_dialog --- 
+                if confirmation_dialog(surface, clock, "Quit Game?"):
                     pygame.quit()
                     sys.exit()
-                # --- Конец исправления --- 
+                # --- Конец передачи --- 
 
             # Передаем события слайдеру для обработки перетаскивания
             replay_slider.handle_event(event)
@@ -1081,13 +1117,14 @@ def replay_screen(surface, history: deque, final_score: int, high_score: int):
         pygame.display.update()
         clock.tick(60) # Поддерживаем стандартную частоту кадров для плавности UI
 
-def game_over_screen(surface, score, snake_length, high_score, current_speed, history: deque):
+def game_over_screen(surface, clock, score, snake_length, high_score, current_speed, history: deque):
     """Экран Game Over теперь просто вызывает replay_screen."""
     # Передаем управление экрану перемотки.
     # Он вернет True, если пользователь нажал "Retry", иначе False или выход.
-    return replay_screen(surface, history, score, high_score)
+    # --- Передаем clock --- 
+    return replay_screen(surface, clock, history, score, high_score)
 
-def settings_screen(surface, current_speed, current_volume, mute, current_fill_percent) -> Tuple[int, int, bool, int]:
+def settings_screen(surface, clock, current_speed, current_volume, mute, current_fill_percent, current_show_path) -> Tuple[int, int, bool, int, bool]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
@@ -1105,73 +1142,73 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
 
     # --- Устанавливаем min_val = 5 для слайдера скорости ---
     speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed", power=2.5)
-    # --- Конец изменения ---
-    y_pos += 70 # Стандартный отступ
+    y_pos += 70
 
     volume_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
-    y_pos += 70 # Стандартный отступ
+    y_pos += 70
 
-    # --- Меняем порядок: сначала слайдер заполнения ---
     fill_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 95, current_fill_percent, "Initial Fill (%)")
-    y_pos += 70 # Стандартный отступ
+    y_pos += 70
 
     mute_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Mute Sound", mute)
-    y_pos += 70 # Стандартный отступ перед кнопкой
+    # --- Добавляем чекбокс для визуализации пути --- 
+    y_pos += 45 # Уменьшаем отступ перед следующим чекбоксом
+    show_path_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Show AI Path", current_show_path)
+    y_pos += 70 # Возвращаем стандартный отступ перед кнопками
+    # --- Конец добавления --- 
 
-    button_width = 180 # Уменьшаем ширину кнопок, чтобы поместились две
+    button_width = 180
     button_height = 55
-    button_spacing = 24 # Расстояние между кнопками
-    # --- Добавляем кнопку Reset Defaults ---
+    button_spacing = 24
     reset_button_rect = pygame.Rect(0, 0, button_width, button_height)
     back_button_rect = pygame.Rect(0, 0, button_width, button_height)
-    
-    # Располагаем кнопки по горизонтали с отступом
+
     total_width = 2 * button_width + button_spacing
     reset_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, y_pos)
     back_button_rect.topleft = (reset_button_rect.right + button_spacing, y_pos)
-    # --- Конец добавления ---
 
     running = True
     while running:
         mouse_pos = pygame.mouse.get_pos()
         is_back_hovered = back_button_rect.collidepoint(mouse_pos)
-        is_back_clicked = False # Сброс состояния клика в начале кадра
-        # --- Добавляем состояния для кнопки Reset ---
+        is_back_clicked = False
         is_reset_hovered = reset_button_rect.collidepoint(mouse_pos)
-        is_reset_clicked = False # Сброс состояния клика
-        # --- Конец добавления ---
+        is_reset_clicked = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                # --- Добавляем подтверждение при закрытии окна --- 
-                if confirmation_dialog(surface, "Quit Game?"):
+                # --- Передаем clock --- 
+                if confirmation_dialog(surface, clock, "Quit Game?"):
                     pygame.quit()
                     sys.exit()
-                # --- Конец добавления --- 
+                # --- Конец передачи --- 
 
-            # Сначала передаем события виджетам (слайдеры, чекбокс)
             speed_slider.handle_event(event)
             volume_slider.handle_event(event)
             fill_slider.handle_event(event)
             mute_checkbox.handle_event(event)
+            # --- Обрабатываем события нового чекбокса --- 
+            show_path_checkbox.handle_event(event)
+            # --- Конец обработки --- 
 
-            # Затем проверяем клик по кнопкам
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if is_back_hovered:
                     is_back_clicked = True
                     if eat_sound:
                         eat_sound.play()
-                    running = False # Выходим из цикла настроек
-                # --- Добавляем обработку нажатия на кнопку Reset ---
+                    running = False
                 elif is_reset_hovered:
                     is_reset_clicked = True
                     if eat_sound:
                         eat_sound.play()
                     # Сбрасываем настройки к значениям по умолчанию
-                    selected_speed = 15 # Значение по умолчанию
-                    selected_volume = 1 # Громкость по умолчанию
-                    is_muted = False # Звук включен
-                    selected_fill_percent = 0 # Начальное заполнение 0%
+                    selected_speed = 15
+                    selected_volume = 1
+                    is_muted = False
+                    selected_fill_percent = 0
+                    # --- Сбрасываем и визуализацию пути --- 
+                    should_show_path = True # По умолчанию показываем путь
+                    # --- Конец сброса --- 
                     # Обновляем виджеты
                     speed_slider.value = selected_speed
                     speed_slider.update_handle_pos()
@@ -1180,24 +1217,24 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
                     fill_slider.value = selected_fill_percent
                     fill_slider.update_handle_pos()
                     mute_checkbox.checked = is_muted
-                    # Применяем громкость немедленно
+                    # --- Обновляем чекбокс пути --- 
+                    show_path_checkbox.checked = should_show_path
+                    # --- Конец обновления --- 
                     if eat_sound:
                         eat_sound.set_volume(0 if is_muted else selected_volume / 100)
-                # --- Конец добавления ---
-            # --- Добавляем выход из настроек по Escape --- 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False # Выходим из цикла настроек
-            # --- Конец добавления --- 
-            # MOUSEBUTTONUP не обрабатываем для кнопки, т.к. действие происходит по нажатию
+                    running = False
 
         # Получаем текущие значения из виджетов
         selected_speed = speed_slider.value
         selected_volume = volume_slider.value
         is_muted = mute_checkbox.checked
         selected_fill_percent = fill_slider.value
+        # --- Получаем значение нового чекбокса --- 
+        should_show_path = show_path_checkbox.checked
+        # --- Конец получения --- 
 
-        # Применяем громкость немедленно
         if eat_sound:
             eat_sound.set_volume(0 if is_muted else selected_volume / 100)
 
@@ -1208,66 +1245,61 @@ def settings_screen(surface, current_speed, current_volume, mute, current_fill_p
         volume_slider.draw(surface)
         fill_slider.draw(surface)
         mute_checkbox.draw(surface)
+        # --- Рисуем новый чекбокс --- 
+        show_path_checkbox.draw(surface)
+        # --- Конец отрисовки --- 
         draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
-        # --- Изменяем текст кнопки Reset ---
         draw_button(surface, reset_button_rect, COLOR_TEXT_HIGHLIGHT, "Reset", is_reset_hovered, is_reset_clicked)
-        # --- Конец изменения ---
 
         pygame.display.update()
         clock.tick(60)
 
-    # Возвращаем выбранные значения ПОСЛЕ выхода из цикла
-    # --- Обновляем возвращаемое значение: добавляем selected_fill_percent --- 
-    return selected_speed, selected_volume, is_muted, selected_fill_percent
+    # --- Обновляем возвращаемое значение: добавляем should_show_path --- 
+    return selected_speed, selected_volume, is_muted, selected_fill_percent, should_show_path
 
-def start_screen(surface, initial_speed, initial_volume, initial_mute, initial_fill_percent) -> Tuple[str, int, int, bool, int]:
+def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, initial_fill_percent, initial_show_path) -> Tuple[str, int, int, bool, int, bool]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
 
-    # --- Добавляем font_small, если он отсутствует (на всякий случай) --- 
     try:
         font_small = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
     except:
         font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
-    # --- Конец добавления --- 
 
     title_surf = font_title.render("Modern Snake", True, COLOR_TEXT_WHITE)
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
 
-    # Параметры кнопок
     button_width = 250
     button_height = 55
     button_y_start = title_rect.bottom + 60
     button_spacing = 30
 
-    # Создаем Rect для каждой кнопки
     manual_button_rect = pygame.Rect(0, 0, button_width, button_height)
     auto_button_rect = pygame.Rect(0, 0, button_width, button_height)
     settings_button_rect = pygame.Rect(0, 0, button_width, button_height)
     quit_button_rect = pygame.Rect(0, 0, button_width, button_height)
 
-    # Центрируем кнопки
     manual_button_rect.center = (SCREEN_WIDTH // 2, button_y_start)
     auto_button_rect.center = (SCREEN_WIDTH // 2, manual_button_rect.bottom + button_spacing)
     settings_button_rect.center = (SCREEN_WIDTH // 2, auto_button_rect.bottom + button_spacing)
-    # --- Сдвигаем кнопку Quit выше, т.к. убрали настройку заполнения ---
     quit_button_rect.center = (SCREEN_WIDTH // 2, settings_button_rect.bottom + button_spacing)
 
-    # Словарь для удобного управления кнопками
     buttons = {
         "manual": {"rect": manual_button_rect, "text": "Manual Play", "color": COLOR_BUTTON},
         "auto": {"rect": auto_button_rect, "text": "Auto Play (AI)", "color": COLOR_BUTTON},
-        "settings": {"rect": settings_button_rect, "text": "Settings", "color": COLOR_TEXT_HIGHLIGHT}, # Выделяем настройки
+        "settings": {"rect": settings_button_rect, "text": "Settings", "color": COLOR_TEXT_HIGHLIGHT},
         "quit": {"rect": quit_button_rect, "text": "Quit Game", "color": COLOR_BUTTON}
     }
 
-    # Начальные значения настроек (будут изменены, если зайти в Settings)
+    # --- Используем переданные начальные значения --- 
     current_speed = initial_speed
     current_volume = initial_volume
     mute = initial_mute
     current_fill_percent = initial_fill_percent
+    show_path_visualization = initial_show_path # Новая переменная
+    # --- Конец использования --- 
     waiting = True
 
     while waiting:
@@ -1276,62 +1308,56 @@ def start_screen(surface, initial_speed, initial_volume, initial_mute, initial_f
         click_states = {key: False for key in buttons}
 
         for event in pygame.event.get():
-            # --- Убедимся, что обработка QUIT здесь есть --- 
             if event.type == pygame.QUIT:
-                if confirmation_dialog(surface, "Quit Game?"):
+                # --- Передаем clock --- 
+                if confirmation_dialog(surface, clock, "Quit Game?"):
                     pygame.quit()
                     sys.exit()
-            # --- Конец проверки --- 
+                # --- Конец передачи --- 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 button_clicked = False
                 for key, data in buttons.items():
-                    if hover_states[key]: # Если кликнули по кнопке, над которой курсор
-                        click_states[key] = True # Устанавливаем флаг клика для отрисовки
+                    if hover_states[key]:
+                        click_states[key] = True
                         if eat_sound and not mute:
                             eat_sound.play()
 
-                        # Выполняем действие в зависимости от нажатой кнопки
                         if key == 'manual':
-                            # --- Возвращаем current_fill_percent --- 
-                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent
+                            # --- Возвращаем show_path_visualization --- 
+                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization
                         elif key == 'auto':
-                            # --- Возвращаем current_fill_percent --- 
-                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent
+                            # --- Возвращаем show_path_visualization --- 
+                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization
                         elif key == 'settings':
-                            # Открываем экран настроек и получаем обновленные значения
-                            # Передаем ТЕКУЩИЕ значения из start_screen в settings_screen
-                            current_speed, current_volume, mute, current_fill_percent = settings_screen(surface, current_speed, current_volume, mute, current_fill_percent)
-                            # Применяем новую громкость сразу после возврата из настроек
+                            # --- Передаем и получаем show_path_visualization --- 
+                            current_speed, current_volume, mute, current_fill_percent, show_path_visualization = settings_screen(
+                                surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization
+                            )
+                            # --- Конец передачи/получения --- 
                             if eat_sound:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
                         elif key == 'quit':
-                            # --- Вызываем диалог подтверждения перед выходом --- 
-                            if confirmation_dialog(surface, "Quit Game?"):
+                            # --- Передаем clock --- 
+                            if confirmation_dialog(surface, clock, "Quit Game?"):
                                 pygame.quit()
                                 sys.exit()
-                            # Если пользователь нажал "No", ничего не делаем
-                            # --- Конец изменения ---
+                            # --- Конец передачи --- 
                         button_clicked = True
-                        break # Выходим из цикла по кнопкам, т.к. клик обработан
+                        break
 
-        # Отрисовка стартового экрана
         surface.fill(COLOR_BACKGROUND)
         surface.blit(title_surf, title_rect)
 
         for key, data in buttons.items():
-            # Передаем состояния hover и click в функцию отрисовки кнопки
             draw_button(surface, data['rect'], data['color'], data['text'], hover_states[key], click_states[key])
 
         pygame.display.update()
         clock.tick(60)
-    # --- Добавляем return, чтобы удовлетворить линтер (хотя эта ветка маловероятна) --- 
-    # Этот return не должен достигаться при нормальной работе, 
-    # так как выход происходит через кнопки Manual/Auto/Quit или закрытие окна.
-    # Возвращаем значения по умолчанию или выбрасываем исключение.
-    # --- Возвращаем current_fill_percent по умолчанию --- 
-    return 'manual', 15, 1, False, 0 # Пример значений по умолчанию
 
-def pause_screen(surface):
+    # --- Обновляем return по умолчанию (хотя он не должен достигаться) --- 
+    return 'manual', 15, 1, False, 0, True # Добавляем True для show_path_visualization
+
+def pause_screen(surface, clock): # Добавляем clock
     # Затемненный оверлей
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     overlay.set_alpha(200)
@@ -1368,10 +1394,13 @@ def pause_screen(surface):
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_p:
                     paused = False
-        pygame.time.Clock().tick(15)
+        # --- Используем переданный clock --- 
+        clock.tick(15)
+        # --- Конец использования --- 
 
 # --- Добавляем функцию диалога подтверждения выхода ---
-def confirmation_dialog(surface, question) -> bool:
+# --- Добавляем clock в параметры --- 
+def confirmation_dialog(surface, clock, question) -> bool:
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     overlay.set_alpha(210) # Сильнее затемнение
     overlay.fill(COLOR_BACKGROUND)
@@ -1398,7 +1427,9 @@ def confirmation_dialog(surface, question) -> bool:
     yes_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, question_rect.bottom + 40)
     no_button_rect.topleft = (yes_button_rect.right + button_spacing, yes_button_rect.top)
 
-    clock = pygame.time.Clock() # Нужен свой clock для цикла диалога
+    # --- Убираем создание clock здесь, используем переданный --- 
+    # clock = pygame.time.Clock()
+    # --- Конец уборки --- 
     while True:
         mouse_pos = pygame.mouse.get_pos()
         is_yes_hovered = yes_button_rect.collidepoint(mouse_pos)
@@ -1435,7 +1466,9 @@ def confirmation_dialog(surface, question) -> bool:
         # --- Конец исправления --- 
 
         pygame.display.update()
+        # --- Используем переданный clock --- 
         clock.tick(60)
+        # --- Конец использования --- 
 # --- Конец добавления функции --- 
 
 def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[int, int]:
@@ -1482,12 +1515,12 @@ def draw_fps_graph(surface: Surface, history: Deque[float], x: int, y: int, widt
         pygame.draw.circle(surface, color, points[0], 2)
 
 def main():
-    # --- Инициализация Pygame и общих ресурсов (выполняется один раз) ---
     pygame.display.set_caption('Modern Snake Game')
+    # --- Переносим clock внутрь main --- 
     clock = pygame.time.Clock()
+    # --- Конец переноса --- 
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-    # Шрифты для UI (загружаем один раз)
     try:
         font_icon = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         font_panel = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_SMALL)
@@ -1498,39 +1531,41 @@ def main():
         font_tiny = pygame.font.SysFont('arial', FONT_SIZE_TINY - 1)
 
     high_score = 0
-    # --- Определяем переменные настроек ЗДЕСЬ, до главного цикла --- 
+    # --- Добавляем переменную для новой настройки --- 
     current_speed = 15
-    current_volume = 1 # Громкость по умолчанию (0-100)
+    current_volume = 1
     mute = False
-    current_fill_percent = 0 # Начальное значение по умолчанию
-    fps_history: Deque[float] = deque(maxlen=2222)
+    current_fill_percent = 0
+    show_path_visualization = True # Новая настройка, по умолчанию включена
+    # --- Конец добавления --- 
+    fps_history: Deque[float] = deque(maxlen=3333)
 
     while True:
-        # --- Передаем текущие настройки в start_screen --- 
-        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent = start_screen(
+        # --- Передаем и получаем show_path_visualization --- 
+        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path = start_screen(
             screen,
-            current_speed, 
-            current_volume, 
-            mute, 
-            current_fill_percent
+            clock, # Передаем clock
+            current_speed,
+            current_volume,
+            mute,
+            current_fill_percent,
+            show_path_visualization # Передаем текущее значение
         )
-        # --- Обновляем настройки в main значениями, вернувшимися из start_screen --- 
+        # --- Обновляем локальные переменные --- 
         current_speed = updated_speed
         current_volume = updated_volume
         mute = updated_mute
         current_fill_percent = updated_fill_percent
+        show_path_visualization = updated_show_path # Обновляем значение настройки
         # --- Конец обновления --- 
 
-        # --- Используем обновленные настройки для игры --- 
-        initial_current_speed = current_speed # Переименовали для ясности внутри игрового цикла
+        initial_current_speed = current_speed
 
         if eat_sound:
             eat_sound.set_volume(0 if mute else current_volume / 100)
 
-        # Передаем current_fill_percent в конструктор Snake
         snake = Snake(mode, initial_fill_percentage=current_fill_percent)
-        # Используем initial_current_speed (которое теперь равно обновленному current_speed)
-        snake.speed = initial_current_speed 
+        snake.speed = initial_current_speed
         food = Food()
         food.randomize_position(snake_positions=snake.positions)
         score = 0
@@ -1544,26 +1579,20 @@ def main():
         slider_margin_h = 15
         slider_margin_top = 35
         slider_height = 15
-        # --- Устанавливаем min_val = 5 для игрового слайдера скорости ---
         game_speed_slider = Slider(speed_panel_rect.x + slider_margin_h,
                                    speed_panel_rect.y + slider_margin_top,
                                    speed_panel_rect.width - 2 * slider_margin_h,
                                    slider_height,
                                    5, 5000, snake.speed, "",
                                    power=2.5)
-        # --- Конец изменения ---
 
-        # --- Инициализируем panel_alpha перед циклом --- 
-        panel_alpha = 76 # Начальное значение (не наведено)
+        panel_alpha = 76
 
-        # --- Внутренний игровой цикл ---
         game_running = True
         while game_running:
-            # --- Получаем позицию мыши и вычисляем panel_alpha в начале кадра --- 
             mouse_pos = pygame.mouse.get_pos()
             is_panel_hovered = speed_panel_rect.collidepoint(mouse_pos)
             panel_alpha = 255 if is_panel_hovered else 76
-            # --- Конец вычислений --- 
 
             game_controls_active = not is_panel_hovered
 
@@ -1573,11 +1602,11 @@ def main():
             events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:
-                    # --- Добавляем подтверждение при закрытии окна --- 
-                    if confirmation_dialog(screen, "Quit Game?"):
+                    # --- Передаем clock в confirmation_dialog --- 
+                    if confirmation_dialog(screen, clock, "Quit Game?"):
                         pygame.quit()
                         sys.exit()
-                    # --- Конец добавления --- 
+                    # --- Конец передачи --- 
 
                 panel_interaction = False
                 if is_panel_hovered:
@@ -1588,32 +1617,29 @@ def main():
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # --- При выходе из игры через Escape возвращаемся в start_screen --- 
                         game_running = False
-                        # Не используем break здесь, чтобы цикл завершился естественным образом
 
                     if game_controls_active:
                          if event.key == pygame.K_p:
-                             pause_screen(screen)
+                             # --- Передаем clock в pause_screen --- 
+                             pause_screen(screen, clock)
+                             # --- Конец передачи --- 
                          if snake.mode == 'manual':
                              if event.key == pygame.K_UP: snake.turn(UP)
                              elif event.key == pygame.K_DOWN: snake.turn(DOWN)
                              elif event.key == pygame.K_LEFT: snake.turn(LEFT)
                              elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
-                            # --- Добавляем управление WASD --- 
                              elif event.key == pygame.K_w: snake.turn(UP)
                              elif event.key == pygame.K_s: snake.turn(DOWN)
                              elif event.key == pygame.K_a: snake.turn(LEFT)
                              elif event.key == pygame.K_d: snake.turn(RIGHT)
-                            # --- Конец добавления --- 
                          if event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
                              snake.speed = min(5000, snake.speed + 5)
                          elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
                              snake.speed = max(1, snake.speed - 5)
 
-                # --- Проверка game_running перед ходом змейки --- 
                 if not game_running:
-                    break # Выходим из игрового цикла, чтобы вернуться в start_screen
+                    break
 
             if not game_running:
                 break
@@ -1628,24 +1654,19 @@ def main():
                 if melody_sound and not mute:
                     melody_sound.play()
 
-                # --- Получаем текущие настройки для передачи в replay/game_over --- 
-                # (Хотя replay_screen их пока не использует, но логично передать)
                 current_speed_on_death = int(snake.speed)
-                # current_volume, mute, current_fill_percent - эти значения не меняются в игровом цикле,
-                # можно использовать те, что были при старте игры.
 
-                should_restart = game_over_screen(screen, score, snake.length, high_score, current_speed_on_death, final_history)
+                # --- Передаем clock в game_over_screen --- 
+                should_restart = game_over_screen(screen, clock, score, snake.length, high_score, current_speed_on_death, final_history)
+                # --- Конец передачи --- 
 
                 if should_restart:
-                    # --- Передаем current_fill_percent в snake.reset --- 
                     snake.reset(initial_fill_percentage=current_fill_percent)
-                    # Восстанавливаем скорость, которая была выбрана ДО смерти (или из настроек)
                     snake.speed = initial_current_speed
                     food.randomize_position(snake_positions=snake.positions)
                     score = 0
-                    game_controls_active = True # Снова активируем управление
+                    game_controls_active = True
                 else:
-                    # Если не рестарт, выходим из игрового цикла, чтобы вернуться в start_screen
                     game_running = False
 
             elif snake.get_head_position() == food.position:
@@ -1662,8 +1683,10 @@ def main():
             screen.fill(COLOR_BACKGROUND)
             draw_grid(screen)
 
-            if snake.mode == 'auto' and snake.path:
+            # --- Условная отрисовка пути --- 
+            if snake.mode == 'auto' and show_path_visualization and snake.path:
                 draw_path(screen, snake.path)
+            # --- Конец изменения --- 
 
             snake.draw(screen)
             food.draw(screen)
@@ -1765,5 +1788,7 @@ def main():
 if __name__ == '__main__':
     pygame.init()
     pygame.mixer.init()
-    clock = pygame.time.Clock()
+    # --- Убираем clock отсюда, он теперь в main --- 
+    # clock = pygame.time.Clock()
+    # --- Конец уборки --- 
     main()
