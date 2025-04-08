@@ -39,6 +39,8 @@ COLOR_PANEL_BG = pygame.Color(40, 44, 52, 210)
 COLOR_CHECKBOX_BORDER = pygame.Color("#abb2bf")
 COLOR_CHECKBOX_CHECK = pygame.Color("#98c379")
 COLOR_GAMEOVER = pygame.Color("#e06c75")
+# --- Tyamba Theme ---
+COLOR_TYAMBA = pygame.Color("#28675d")
 
 # --- Шрифты ---
 FONT_NAME_PRIMARY = 'Consolas, Calibri, Arial'
@@ -75,24 +77,115 @@ except pygame.error:
 SURVIVAL_MODE_DURATION = 100 # Количество шагов в режиме выживания
 # --- Конец добавления ---
 
+# --- Глобальные переменные для хранения текущей темы ---
+current_theme = "default"
+current_colors = {
+    'background': COLOR_BACKGROUND,
+    'grid': COLOR_GRID,
+    'snake': COLOR_SNAKE,
+    'snake_head': COLOR_SNAKE_HEAD,
+    'snake_head_gradient': COLOR_SNAKE_HEAD_GRADIENT,
+    'snake_tail': COLOR_SNAKE_TAIL,
+    'food': COLOR_FOOD,
+    'path_visualization': COLOR_PATH_VISUALIZATION,
+    'text': COLOR_TEXT,
+    'text_highlight': COLOR_TEXT_HIGHLIGHT,
+    'text_white': COLOR_TEXT_WHITE,
+    'button': COLOR_BUTTON,
+    'button_hover': COLOR_BUTTON_HOVER,
+    'button_click': COLOR_BUTTON_CLICK,
+    'slider_bg': COLOR_SLIDER_BG,
+    'slider_handle': COLOR_SLIDER_HANDLE,
+    'panel_bg': COLOR_PANEL_BG,
+    'checkbox_border': COLOR_CHECKBOX_BORDER,
+    'checkbox_check': COLOR_CHECKBOX_CHECK,
+    'gameover': COLOR_GAMEOVER
+}
+
+def set_theme(theme_name):
+    """Устанавливает цветовую тему игры."""
+    global current_theme, current_colors
+    
+    current_theme = theme_name
+    
+    if theme_name == "tyamba":
+        # Загружаем цвета темы Tyamba
+        tyamba_colors = generate_tyamba_gradient_colors()
+        current_colors.update(tyamba_colors)
+        # Добавляем отсутствующие цвета
+        current_colors['text_white'] = pygame.Color(255, 255, 255)
+    else:
+        # Возвращаем тему по умолчанию
+        current_colors = {
+            'background': COLOR_BACKGROUND,
+            'grid': COLOR_GRID,
+            'snake': COLOR_SNAKE,
+            'snake_head': COLOR_SNAKE_HEAD,
+            'snake_head_gradient': COLOR_SNAKE_HEAD_GRADIENT,
+            'snake_tail': COLOR_SNAKE_TAIL,
+            'food': COLOR_FOOD,
+            'path_visualization': COLOR_PATH_VISUALIZATION,
+            'text': COLOR_TEXT,
+            'text_highlight': COLOR_TEXT_HIGHLIGHT,
+            'text_white': COLOR_TEXT_WHITE,
+            'button': COLOR_BUTTON,
+            'button_hover': COLOR_BUTTON_HOVER,
+            'button_click': COLOR_BUTTON_CLICK,
+            'slider_bg': COLOR_SLIDER_BG,
+            'slider_handle': COLOR_SLIDER_HANDLE,
+            'panel_bg': COLOR_PANEL_BG,
+            'checkbox_border': COLOR_CHECKBOX_BORDER,
+            'checkbox_check': COLOR_CHECKBOX_CHECK,
+            'gameover': COLOR_GAMEOVER
+        }
+
+def generate_tyamba_gradient_colors():
+    """Генерирует набор цветов для градиента темы Tyamba на основе COLOR_TYAMBA."""
+    base_color = COLOR_TYAMBA
+    darker = pygame.Color(base_color.r // 2, base_color.g // 2, base_color.b // 2)
+    lighter = pygame.Color(min(base_color.r + 70, 255), min(base_color.g + 70, 255), min(base_color.b + 70, 255))
+    accent = pygame.Color(min(base_color.r + 50, 255), min(base_color.g, 255), min(base_color.b + 80, 255))
+    
+    return {
+        'background': darker,
+        'grid': base_color,
+        'snake': lighter,
+        'snake_head': accent,
+        'snake_head_gradient': pygame.Color(min(accent.r + 30, 255), min(accent.g + 30, 255), min(accent.b, 255)),
+        'snake_tail': pygame.Color(int(base_color.r // 1.5), int(base_color.g // 1.5), int(base_color.b // 1.5)),
+        'food': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
+        'text': pygame.Color(220, 220, 220),
+        'text_highlight': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 120, 255), min(base_color.b + 20, 255)),
+        'button': lighter,
+        'button_hover': accent,
+        'button_click': pygame.Color(min(base_color.r, 255), min(base_color.g + 60, 255), min(base_color.b + 60, 255)),
+        'slider_bg': base_color,
+        'slider_handle': accent,
+        'panel_bg': pygame.Color(int(darker.r), int(darker.g), int(darker.b), 210),
+        'checkbox_border': pygame.Color(200, 200, 200),
+        'checkbox_check': accent,
+        'gameover': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
+        'path_visualization': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 60, 255), min(base_color.b, 255))
+    }
+
 def draw_object(surface, color, pos):
     rect = pygame.Rect((pos[0] * GRIDSIZE, pos[1] * GRIDSIZE), (GRIDSIZE, GRIDSIZE))
     pygame.draw.rect(surface, color, rect)
 
 def draw_grid(surface):
     for x in range(0, SCREEN_WIDTH, GRIDSIZE):
-        pygame.draw.line(surface, COLOR_GRID, (x, 0), (x, SCREEN_HEIGHT))
+        pygame.draw.line(surface, current_colors['grid'], (x, 0), (x, SCREEN_HEIGHT))
     for y in range(0, SCREEN_HEIGHT, GRIDSIZE):
-        pygame.draw.line(surface, COLOR_GRID, (0, y), (SCREEN_WIDTH, y))
+        pygame.draw.line(surface, current_colors['grid'], (0, y), (SCREEN_WIDTH, y))
 
 def draw_button(surface, button, base_color, text, is_hovered, is_clicked):
     button_color = base_color
     if is_clicked:
-        button_color = COLOR_BUTTON_CLICK
+        button_color = current_colors['button_click']
     elif is_hovered:
         # --- Изменяем эффект наведения: делаем кнопку темнее --- 
         # button_color = COLOR_BUTTON_HOVER
-        button_color = base_color.lerp(COLOR_BACKGROUND, 0.2) # Смешиваем с цветом фона
+        button_color = base_color.lerp(current_colors['background'], 0.2) # Смешиваем с цветом фона
         # --- Конец изменения --- 
 
     button_rect = pygame.Rect(button)
@@ -103,7 +196,7 @@ def draw_button(surface, button, base_color, text, is_hovered, is_clicked):
     except:
         font = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
 
-    text_surf = font.render(text, True, COLOR_TEXT_WHITE)
+    text_surf = font.render(text, True, current_colors['text_white'])
     text_rect = text_surf.get_rect(center=button_rect.center)
     text_rect.centery += 3
     surface.blit(text_surf, text_rect)
@@ -112,7 +205,7 @@ def draw_path(surface, path):
     """Отрисовывает предполагаемый путь змейки (для автопилота)."""
     try:
         for p in path:
-            draw_object(surface, COLOR_PATH_VISUALIZATION, p)
+            draw_object(surface, current_colors['path_visualization'], p)
     except Exception as e:
         print(f"Error drawing path: {e}")
         pass
@@ -196,7 +289,7 @@ class Slider:
         self.value = max(self.min_val, min(self.value, self.max_val))
 
     def draw(self, surface):
-        pygame.draw.rect(surface, COLOR_SLIDER_BG, self.rect, border_radius=5)
+        pygame.draw.rect(surface, current_colors['slider_bg'], self.rect, border_radius=5)
 
         value_range = self.max_val - self.min_val
         if value_range == 0:
@@ -210,10 +303,10 @@ class Slider:
 
         if filled_width > 0:
             filled_rect = pygame.Rect(self.rect.x, self.rect.y, filled_width, self.rect.height)
-            pygame.draw.rect(surface, COLOR_SLIDER_HANDLE, filled_rect, border_radius=5)
+            pygame.draw.rect(surface, current_colors['slider_handle'], filled_rect, border_radius=5)
 
         if self.label:
-            label_surf = self.font.render(f"{self.label}: {int(self.value)}", True, COLOR_TEXT)
+            label_surf = self.font.render(f"{self.label}: {int(self.value)}", True, current_colors['text'])
             label_rect = label_surf.get_rect(midbottom=(self.rect.centerx, self.rect.top - 8))
             surface.blit(label_surf, label_rect)
 
@@ -222,6 +315,7 @@ class Checkbox:
         self.rect = pygame.Rect(x, y, size, size)
         self.checked = initial
         self.label = label
+        self.label_rect = None # Добавляем атрибут для хранения Rect метки
         try:
             self.font = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         except:
@@ -229,19 +323,23 @@ class Checkbox:
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.rect.collidepoint(event.pos):
+            # Проверяем клик по чекбоксу ИЛИ по его метке (если она уже отрисована)
+            checkbox_clicked = self.rect.collidepoint(event.pos)
+            label_clicked = self.label_rect and self.label_rect.collidepoint(event.pos)
+            if checkbox_clicked or label_clicked:
                 self.checked = not self.checked
 
     def draw(self, surface):
-        pygame.draw.rect(surface, COLOR_CHECKBOX_BORDER, self.rect, border_radius=3, width=2)
+        pygame.draw.rect(surface, current_colors['checkbox_border'], self.rect, border_radius=3, width=2)
         if self.checked:
             check_margin = 4 # Отступ от границы
             inner_rect = self.rect.inflate(-check_margin * 2, -check_margin * 2)
-            pygame.draw.rect(surface, COLOR_CHECKBOX_CHECK, inner_rect, border_radius=2)
-        label_surf = self.font.render(self.label, True, COLOR_TEXT)
+            pygame.draw.rect(surface, current_colors['checkbox_check'], inner_rect, border_radius=2)
+        label_surf = self.font.render(self.label, True, current_colors['text'])
         label_rect = label_surf.get_rect()
         label_rect.left = self.rect.right + 10
         label_rect.centery = self.rect.centery + 3
+        self.label_rect = label_rect # Сохраняем Rect метки
         surface.blit(label_surf, label_rect)
 
 class PathFind:
@@ -393,7 +491,7 @@ class Snake:
         initial_pos = ((GRID_WIDTH) // 2, (GRID_HEIGHT) // 2)
         self.positions: Deque[Tuple[int, int]] = deque([initial_pos])
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
-        self.color = COLOR_SNAKE
+        self.color = current_colors['snake']
         self.mode = mode
         self.next_direction = self.direction
         self.path = []
@@ -438,13 +536,13 @@ class Snake:
         # --- Первый проход: Рисуем сплошные сегменты (используем self.positions) ---
         # Голова
         head_pos = self.positions[0]
-        draw_object(surface, COLOR_SNAKE_HEAD, head_pos)
+        draw_object(surface, current_colors['snake_head'], head_pos)
 
         # Тело и хвост (только цвет, без линий)
         if num_segments > 1:
-            head_color = COLOR_SNAKE_HEAD_GRADIENT
-            body_color = COLOR_SNAKE
-            tail_color = COLOR_SNAKE_TAIL
+            head_color = current_colors['snake_head_gradient']
+            body_color = current_colors['snake']
+            tail_color = current_colors['snake_tail']
 
             # Итерируем напрямую по deque, пропуская голову (i=0)
             for i, current_pos in enumerate(itertools.islice(self.positions, 1, None)):
@@ -464,7 +562,7 @@ class Snake:
 
         # --- Второй проход: Рисуем ВНУТРЕННИЕ границы (используем self.positions и self.positions_set) ---
         if num_segments > 1:
-            internal_border_color = COLOR_GRID # Цвет для внутренних линий
+            internal_border_color = current_colors['grid'] # Цвет для внутренних линий
             line_width = 1
             for i, current_pos in enumerate(self.positions): # Итерируем по ВСЕМ сегментам deque
                 x, y = current_pos
@@ -866,7 +964,7 @@ class Snake:
 class Food:
     def __init__(self):
         self.position = (0, 0)
-        self.color = COLOR_FOOD
+        self.color = current_colors['food']
         self.randomize_position([]) # Первоначальная рандомизация без змейки
 
     def randomize_position(self, snake_positions: List[Tuple[int, int]] | Deque[Tuple[int, int]]):
@@ -913,7 +1011,7 @@ def display_statistics(surface, score, snake_length, high_score, current_speed):
     # Score (рендерим только если значение изменилось)
     if score != stats_cache["score"] or stats_cache["score_surf"] is None:
         stats_cache["score"] = score
-        stats_cache["score_surf"] = font.render(f'Score: {score}', True, COLOR_TEXT_WHITE)
+        stats_cache["score_surf"] = font.render(f'Score: {score}', True, current_colors['text_white'])
     text_surf = stats_cache["score_surf"]
     text_rect = text_surf.get_rect(topleft=(15, y_offset))
     surface.blit(text_surf, text_rect)
@@ -922,7 +1020,7 @@ def display_statistics(surface, score, snake_length, high_score, current_speed):
     # High Score (рендерим только если значение изменилось)
     if high_score != stats_cache["high_score"] or stats_cache["high_score_surf"] is None:
         stats_cache["high_score"] = high_score
-        stats_cache["high_score_surf"] = font.render(f'High Score: {high_score}', True, COLOR_TEXT_WHITE)
+        stats_cache["high_score_surf"] = font.render(f'High Score: {high_score}', True, current_colors['text_white'])
     text_surf = stats_cache["high_score_surf"]
     text_rect = text_surf.get_rect(topleft=(15, y_offset))
     surface.blit(text_surf, text_rect)
@@ -935,14 +1033,14 @@ def display_statistics(surface, score, snake_length, high_score, current_speed):
     if snake_length != stats_cache["snake_length"] or stats_cache["area_surf"] is None:
         stats_cache["snake_length"] = snake_length
         area_percentage = (snake_length / (GRID_WIDTH * GRID_HEIGHT)) * 100
-        stats_cache["area_surf"] = font.render(f'Area: {area_percentage:.1f}%', True, COLOR_TEXT_WHITE)
+        stats_cache["area_surf"] = font.render(f'Area: {area_percentage:.1f}%', True, current_colors['text_white'])
     texts_to_render.append(stats_cache["area_surf"])
 
     # Speed (рендерим только если значение изменилось)
     rounded_speed = int(current_speed)
     if rounded_speed != stats_cache["current_speed"] or stats_cache["speed_surf"] is None:
         stats_cache["current_speed"] = rounded_speed
-        stats_cache["speed_surf"] = font.render(f'Speed: {rounded_speed}', True, COLOR_TEXT_WHITE)
+        stats_cache["speed_surf"] = font.render(f'Speed: {rounded_speed}', True, current_colors['text_white'])
     texts_to_render.append(stats_cache["speed_surf"])
 
     # Рисуем нижние тексты снизу вверх
@@ -1124,13 +1222,13 @@ def game_over_screen(surface, clock, score, snake_length, high_score, current_sp
     # --- Передаем clock --- 
     return replay_screen(surface, clock, history, score, high_score)
 
-def settings_screen(surface, clock, current_speed, current_volume, mute, current_fill_percent, current_show_path) -> Tuple[int, int, bool, int, bool]:
+def settings_screen(surface, clock, current_speed, current_volume, mute, current_fill_percent, current_show_path, current_theme="default") -> Tuple[int, int, bool, int, bool, str]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
 
-    title_surf = font_title.render("Settings", True, COLOR_TEXT_WHITE)
+    title_surf = font_title.render("Settings", True, current_colors['text_white'])
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 220))
 
     # Виджеты настроек
@@ -1154,6 +1252,9 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     # --- Добавляем чекбокс для визуализации пути --- 
     y_pos += 45 # Уменьшаем отступ перед следующим чекбоксом
     show_path_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Show AI Path", current_show_path)
+    # --- Добавляем чекбокс для Tyamba Theme ---
+    y_pos += 45
+    tyamba_theme_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Tyamba Theme", current_theme == "tyamba")
     y_pos += 70 # Возвращаем стандартный отступ перед кнопками
     # --- Конец добавления --- 
 
@@ -1189,6 +1290,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
             mute_checkbox.handle_event(event)
             # --- Обрабатываем события нового чекбокса --- 
             show_path_checkbox.handle_event(event)
+            # --- Обрабатываем события чекбокса Tyamba Theme ---
+            tyamba_theme_checkbox.handle_event(event)
             # --- Конец обработки --- 
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1207,7 +1310,12 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     is_muted = False
                     selected_fill_percent = 0
                     # --- Сбрасываем и визуализацию пути --- 
-                    should_show_path = True # По умолчанию показываем путь
+                    should_show_path = False # По умолчанию НЕ показываем путь
+                    # --- Сбрасываем тему к стандартной ---
+                    selected_theme = "default"
+                    tyamba_theme_checkbox.checked = False
+                    # Применяем стандартную тему сразу
+                    set_theme(selected_theme)
                     # --- Конец сброса --- 
                     # Обновляем виджеты
                     speed_slider.value = selected_speed
@@ -1233,13 +1341,20 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         selected_fill_percent = fill_slider.value
         # --- Получаем значение нового чекбокса --- 
         should_show_path = show_path_checkbox.checked
+        # --- Получаем значение чекбокса Tyamba Theme ---
+        selected_theme = "tyamba" if tyamba_theme_checkbox.checked else "default"
+        
+        # Применяем тему сразу при изменении
+        if current_theme != selected_theme:
+            set_theme(selected_theme)
+            current_theme = selected_theme
         # --- Конец получения --- 
 
         if eat_sound:
             eat_sound.set_volume(0 if is_muted else selected_volume / 100)
 
         # Отрисовка
-        surface.fill(COLOR_BACKGROUND)
+        surface.fill(current_colors['background'])
         surface.blit(title_surf, title_rect)
         speed_slider.draw(surface)
         volume_slider.draw(surface)
@@ -1247,17 +1362,19 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         mute_checkbox.draw(surface)
         # --- Рисуем новый чекбокс --- 
         show_path_checkbox.draw(surface)
+        # --- Рисуем чекбокс Tyamba Theme ---
+        tyamba_theme_checkbox.draw(surface)
         # --- Конец отрисовки --- 
-        draw_button(surface, back_button_rect, COLOR_BUTTON, "Back", is_back_hovered, is_back_clicked)
-        draw_button(surface, reset_button_rect, COLOR_TEXT_HIGHLIGHT, "Reset", is_reset_hovered, is_reset_clicked)
+        draw_button(surface, back_button_rect, current_colors['button'], "Back", is_back_hovered, is_back_clicked)
+        draw_button(surface, reset_button_rect, current_colors['text_highlight'], "Reset", is_reset_hovered, is_reset_clicked)
 
         pygame.display.update()
         clock.tick(60)
 
-    # --- Обновляем возвращаемое значение: добавляем should_show_path --- 
-    return selected_speed, selected_volume, is_muted, selected_fill_percent, should_show_path
+    # --- Обновляем возвращаемое значение: добавляем should_show_path и selected_theme --- 
+    return selected_speed, selected_volume, is_muted, selected_fill_percent, should_show_path, selected_theme
 
-def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, initial_fill_percent, initial_show_path) -> Tuple[str, int, int, bool, int, bool]:
+def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, initial_fill_percent, initial_show_path, initial_theme="default") -> Tuple[str, int, int, bool, int, bool, str]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
@@ -1268,7 +1385,7 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
     except:
         font_small = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
 
-    title_surf = font_title.render("Modern Snake", True, COLOR_TEXT_WHITE)
+    title_surf = font_title.render("Modern Snake", True, current_colors['text_white'])
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
 
     button_width = 250
@@ -1287,10 +1404,10 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
     quit_button_rect.center = (SCREEN_WIDTH // 2, settings_button_rect.bottom + button_spacing)
 
     buttons = {
-        "manual": {"rect": manual_button_rect, "text": "Manual Play", "color": COLOR_BUTTON},
-        "auto": {"rect": auto_button_rect, "text": "Auto Play (AI)", "color": COLOR_BUTTON},
-        "settings": {"rect": settings_button_rect, "text": "Settings", "color": COLOR_TEXT_HIGHLIGHT},
-        "quit": {"rect": quit_button_rect, "text": "Quit Game", "color": COLOR_BUTTON}
+        "manual": {"rect": manual_button_rect, "text": "Manual Play", "color": current_colors['button']},
+        "auto": {"rect": auto_button_rect, "text": "Auto Play (AI)", "color": current_colors['button']},
+        "settings": {"rect": settings_button_rect, "text": "Settings", "color": current_colors['text_highlight']},
+        "quit": {"rect": quit_button_rect, "text": "Quit Game", "color": current_colors['button']}
     }
 
     # --- Используем переданные начальные значения --- 
@@ -1299,6 +1416,9 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
     mute = initial_mute
     current_fill_percent = initial_fill_percent
     show_path_visualization = initial_show_path # Новая переменная
+    current_theme = initial_theme # Добавляем переменную для темы
+    # Устанавливаем тему
+    set_theme(current_theme)
     # --- Конец использования --- 
     waiting = True
 
@@ -1323,15 +1443,15 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
                             eat_sound.play()
 
                         if key == 'manual':
-                            # --- Возвращаем show_path_visualization --- 
-                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization
+                            # --- Возвращаем show_path_visualization и current_theme --- 
+                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme
                         elif key == 'auto':
-                            # --- Возвращаем show_path_visualization --- 
-                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization
+                            # --- Возвращаем show_path_visualization и current_theme --- 
+                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme
                         elif key == 'settings':
-                            # --- Передаем и получаем show_path_visualization --- 
-                            current_speed, current_volume, mute, current_fill_percent, show_path_visualization = settings_screen(
-                                surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization
+                            # --- Передаем и получаем show_path_visualization и current_theme --- 
+                            current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme = settings_screen(
+                                surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme
                             )
                             # --- Конец передачи/получения --- 
                             if eat_sound:
@@ -1345,7 +1465,7 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
                         button_clicked = True
                         break
 
-        surface.fill(COLOR_BACKGROUND)
+        surface.fill(current_colors['background'])
         surface.blit(title_surf, title_rect)
 
         for key, data in buttons.items():
@@ -1355,13 +1475,13 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
         clock.tick(60)
 
     # --- Обновляем return по умолчанию (хотя он не должен достигаться) --- 
-    return 'manual', 15, 1, False, 0, True # Добавляем True для show_path_visualization
+    return 'manual', 15, 1, False, 0, False, "default" # Добавляем "default" для current_theme
 
 def pause_screen(surface, clock): # Добавляем clock
     # Затемненный оверлей
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     overlay.set_alpha(200)
-    overlay.fill(COLOR_BACKGROUND)
+    overlay.fill(current_colors['background'])
     surface.blit(overlay, (0, 0))
 
     try:
@@ -1369,7 +1489,7 @@ def pause_screen(surface, clock): # Добавляем clock
     except:
         font = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
 
-    pause_text = font.render("Paused", True, COLOR_TEXT_WHITE)
+    pause_text = font.render("Paused", True, current_colors['text_white'])
     pause_rect = pause_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
     surface.blit(pause_text, pause_rect)
 
@@ -1378,7 +1498,7 @@ def pause_screen(surface, clock): # Добавляем clock
         font_hint = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
     except:
         font_hint = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
-    hint_text = font_hint.render("Press 'P' to resume", True, COLOR_TEXT)
+    hint_text = font_hint.render("Press 'P' to resume", True, current_colors['text'])
     hint_rect = hint_text.get_rect(center=(SCREEN_WIDTH // 2, pause_rect.bottom + 40))
     surface.blit(hint_text, hint_rect)
 
@@ -1403,7 +1523,7 @@ def pause_screen(surface, clock): # Добавляем clock
 def confirmation_dialog(surface, clock, question) -> bool:
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     overlay.set_alpha(210) # Сильнее затемнение
-    overlay.fill(COLOR_BACKGROUND)
+    overlay.fill(current_colors['background'])
     surface.blit(overlay, (0, 0))
 
     try:
@@ -1413,7 +1533,7 @@ def confirmation_dialog(surface, clock, question) -> bool:
         font_question = pygame.font.SysFont('arial', FONT_SIZE_LARGE - 2)
         font_button = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
 
-    question_surf = font_question.render(question, True, COLOR_TEXT_WHITE)
+    question_surf = font_question.render(question, True, current_colors['text_white'])
     question_rect = question_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60))
     surface.blit(question_surf, question_rect)
 
@@ -1459,8 +1579,8 @@ def confirmation_dialog(surface, clock, question) -> bool:
 
         # Перерисовка кнопок в цикле диалога
         temp_surface = surface.copy() # Копируем фон с текстом вопроса
-        draw_button(temp_surface, yes_button_rect, COLOR_GAMEOVER, "Yes", is_yes_hovered, is_yes_clicked) # Используем цвет Game Over для "Yes"
-        draw_button(temp_surface, no_button_rect, COLOR_BUTTON, "No", is_no_hovered, is_no_clicked)
+        draw_button(temp_surface, yes_button_rect, current_colors['gameover'], "Yes", is_yes_hovered, is_yes_clicked) # Используем цвет Game Over для "Yes"
+        draw_button(temp_surface, no_button_rect, current_colors['button'], "No", is_no_hovered, is_no_clicked)
         # --- Исправляем: используем surface вместо screen ---
         surface.blit(temp_surface, (0,0)) # Рисуем обновленный кадр
         # --- Конец исправления --- 
@@ -1536,20 +1656,22 @@ def main():
     current_volume = 1
     mute = False
     current_fill_percent = 0
-    show_path_visualization = True # Новая настройка, по умолчанию включена
+    show_path_visualization = False # Новая настройка, по умолчанию выключена
+    current_theme = "default" # Настройка темы по умолчанию
     # --- Конец добавления --- 
     fps_history: Deque[float] = deque(maxlen=3333)
 
     while True:
-        # --- Передаем и получаем show_path_visualization --- 
-        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path = start_screen(
+        # --- Передаем и получаем show_path_visualization и current_theme --- 
+        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path, updated_theme = start_screen(
             screen,
             clock, # Передаем clock
             current_speed,
             current_volume,
             mute,
             current_fill_percent,
-            show_path_visualization # Передаем текущее значение
+            show_path_visualization, # Передаем текущее значение
+            current_theme # Передаем текущую тему
         )
         # --- Обновляем локальные переменные --- 
         current_speed = updated_speed
@@ -1557,6 +1679,9 @@ def main():
         mute = updated_mute
         current_fill_percent = updated_fill_percent
         show_path_visualization = updated_show_path # Обновляем значение настройки
+        current_theme = updated_theme # Обновляем тему
+        # Применяем выбранную тему
+        set_theme(current_theme)
         # --- Конец обновления --- 
 
         initial_current_speed = current_speed
@@ -1680,7 +1805,7 @@ def main():
                 if score > high_score:
                     high_score = score
 
-            screen.fill(COLOR_BACKGROUND)
+            screen.fill(current_colors['background'])
             draw_grid(screen)
 
             # --- Условная отрисовка пути --- 
@@ -1732,7 +1857,7 @@ def main():
 
             # --- Рисуем сам график НА ОТДЕЛЬНОЙ ПОВЕРХНОСТИ ---
             # Передаем ОТНОСИТЕЛЬНЫЕ координаты и размеры ГРАФИКА
-            draw_fps_graph(fps_widget_surface, fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=COLOR_TEXT_HIGHLIGHT)
+            draw_fps_graph(fps_widget_surface, fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'])
 
             # --- Рисуем текст справа от графика НА ОТДЕЛЬНОЙ ПОВЕРХНОСТИ ---
             if fps_history:
@@ -1742,17 +1867,17 @@ def main():
                 text_margin_in_area = 3
 
                 # Max FPS
-                max_text_surf = font_tiny.render(f"{max_fps_hist:.0f}", True, COLOR_TEXT)
+                max_text_surf = font_tiny.render(f"{max_fps_hist:.0f}", True, current_colors['text'])
                 # --- Используем относительные координаты ---
                 max_text_rect = max_text_surf.get_rect(topright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + text_margin_in_area))
                 fps_widget_surface.blit(max_text_surf, max_text_rect)
                 # Avg FPS
-                avg_text_surf = font_tiny.render(f"{avg_fps:.0f}", True, COLOR_TEXT)
+                avg_text_surf = font_tiny.render(f"{avg_fps:.0f}", True, current_colors['text'])
                 # --- Используем относительные координаты ---
                 avg_text_rect = avg_text_surf.get_rect(midright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height // 2))
                 fps_widget_surface.blit(avg_text_surf, avg_text_rect)
                 # Min FPS
-                min_text_surf = font_tiny.render(f"{min_fps:.0f}", True, COLOR_TEXT)
+                min_text_surf = font_tiny.render(f"{min_fps:.0f}", True, current_colors['text'])
                 # --- Используем относительные координаты ---
                 min_text_rect = min_text_surf.get_rect(bottomright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height - text_margin_in_area))
                 fps_widget_surface.blit(min_text_surf, min_text_rect)
@@ -1765,11 +1890,11 @@ def main():
             screen.blit(fps_widget_surface, fps_widget_rect.topleft)
 
             # --- Теперь рисуем панель скорости ПОСЛЕ графика FPS ---
-            panel_bg_color_tuple = (COLOR_PANEL_BG.r, COLOR_PANEL_BG.g, COLOR_PANEL_BG.b, panel_alpha)
+            panel_bg_color_tuple = (current_colors['panel_bg'].r, current_colors['panel_bg'].g, current_colors['panel_bg'].b, panel_alpha)
             panel_surface = pygame.Surface(speed_panel_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(panel_surface, panel_bg_color_tuple, panel_surface.get_rect(), border_radius=4)
 
-            panel_title_surf = font_panel.render("Speed", True, COLOR_TEXT_WHITE)
+            panel_title_surf = font_panel.render("Speed", True, current_colors['text_white'])
             panel_title_rect = panel_title_surf.get_rect(centerx=panel_surface.get_rect().centerx, top=8)
             panel_surface.blit(panel_title_surf, panel_title_rect)
 
