@@ -41,6 +41,11 @@ COLOR_CHECKBOX_CHECK = pygame.Color("#98c379")
 COLOR_GAMEOVER = pygame.Color("#e06c75")
 # --- Tyamba Theme ---
 COLOR_TYAMBA = pygame.Color("#28675d")
+# --- Sergaris Theme ---
+COLOR_SERGARIS_DARK = pygame.Color("#1a1a1a")    # Темно-серый/черный цвет тела
+COLOR_SERGARIS_GRAY = pygame.Color("#4d4d4d")     # Средний серый цвет тела
+COLOR_SERGARIS_ORANGE = pygame.Color("#ff7733")   # Оранжевый/рыжий цвет акцентов
+COLOR_SERGARIS_BLUE = pygame.Color("#66cccc")     # Голубой цвет глаз
 
 # --- Шрифты ---
 FONT_NAME_PRIMARY = 'Consolas, Calibri, Arial'
@@ -77,46 +82,65 @@ except pygame.error:
 SURVIVAL_MODE_DURATION = 100 # Количество шагов в режиме выживания
 # --- Конец добавления ---
 
-# --- Глобальные переменные для хранения текущей темы ---
-current_theme = "default"
-current_colors = {
-    'background': COLOR_BACKGROUND,
-    'grid': COLOR_GRID,
-    'snake': COLOR_SNAKE,
-    'snake_head': COLOR_SNAKE_HEAD,
-    'snake_head_gradient': COLOR_SNAKE_HEAD_GRADIENT,
-    'snake_tail': COLOR_SNAKE_TAIL,
-    'food': COLOR_FOOD,
-    'path_visualization': COLOR_PATH_VISUALIZATION,
-    'text': COLOR_TEXT,
-    'text_highlight': COLOR_TEXT_HIGHLIGHT,
-    'text_white': COLOR_TEXT_WHITE,
-    'button': COLOR_BUTTON,
-    'button_hover': COLOR_BUTTON_HOVER,
-    'button_click': COLOR_BUTTON_CLICK,
-    'slider_bg': COLOR_SLIDER_BG,
-    'slider_handle': COLOR_SLIDER_HANDLE,
-    'panel_bg': COLOR_PANEL_BG,
-    'checkbox_border': COLOR_CHECKBOX_BORDER,
-    'checkbox_check': COLOR_CHECKBOX_CHECK,
-    'gameover': COLOR_GAMEOVER
-}
+# --- Централизованное определение тем ---
+def _generate_tyamba_colors():
+    """Генерирует палитру для темы Tyamba."""
+    base_color = COLOR_TYAMBA
+    darker = pygame.Color(base_color.r // 2, base_color.g // 2, base_color.b // 2)
+    lighter = pygame.Color(min(base_color.r + 70, 255), min(base_color.g + 70, 255), min(base_color.b + 70, 255))
+    accent = pygame.Color(min(base_color.r + 50, 255), min(base_color.g, 255), min(base_color.b + 80, 255))
+    return {
+        'background': darker,
+        'grid': base_color,
+        'snake': lighter,
+        'snake_head': accent,
+        'snake_head_gradient': pygame.Color(min(accent.r + 30, 255), min(accent.g + 30, 255), min(accent.b, 255)),
+        'snake_tail': pygame.Color(int(base_color.r // 1.5), int(base_color.g // 1.5), int(base_color.b // 1.5)),
+        'food': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
+        'path_visualization': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 60, 255), min(base_color.b, 255)),
+        'text': pygame.Color(220, 220, 220),
+        'text_highlight': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 120, 255), min(base_color.b + 20, 255)),
+        'text_white': pygame.Color(255, 255, 255),
+        'button': lighter,
+        'button_hover': accent,
+        'button_click': pygame.Color(min(base_color.r, 255), min(base_color.g + 60, 255), min(base_color.b + 60, 255)),
+        'slider_bg': base_color,
+        'slider_handle': accent,
+        'panel_bg': pygame.Color(int(darker.r), int(darker.g), int(darker.b), 210),
+        'checkbox_border': pygame.Color(200, 200, 200),
+        'checkbox_check': accent,
+        'gameover': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
+    }
 
-def set_theme(theme_name):
-    """Устанавливает цветовую тему игры."""
-    global current_theme, current_colors
-    
-    current_theme = theme_name
-    
-    if theme_name == "tyamba":
-        # Загружаем цвета темы Tyamba
-        tyamba_colors = generate_tyamba_gradient_colors()
-        current_colors.update(tyamba_colors)
-        # Добавляем отсутствующие цвета
-        current_colors['text_white'] = pygame.Color(255, 255, 255)
-    else:
-        # Возвращаем тему по умолчанию
-        current_colors = {
+def _generate_sergaris_colors():
+    """Генерирует палитру для темы Sergaris."""
+    return {
+        'background': COLOR_SERGARIS_DARK,
+        'grid': COLOR_SERGARIS_GRAY,
+        'snake': COLOR_SERGARIS_GRAY,
+        'snake_head': COLOR_SERGARIS_BLUE,
+        'snake_head_gradient': COLOR_SERGARIS_ORANGE,
+        'snake_tail': COLOR_SERGARIS_DARK,
+        'food': COLOR_SERGARIS_ORANGE,
+        'path_visualization': COLOR_SERGARIS_BLUE,
+        'text': pygame.Color(220, 220, 220),
+        'text_highlight': COLOR_SERGARIS_ORANGE,
+        'text_white': pygame.Color(255, 255, 255),
+        'button': COLOR_SERGARIS_GRAY,
+        'button_hover': COLOR_SERGARIS_ORANGE,
+        'button_click': COLOR_SERGARIS_BLUE,
+        'slider_bg': COLOR_SERGARIS_GRAY,
+        'slider_handle': COLOR_SERGARIS_ORANGE,
+        'panel_bg': pygame.Color(COLOR_SERGARIS_DARK.r, COLOR_SERGARIS_DARK.g, COLOR_SERGARIS_DARK.b, 210),
+        'checkbox_border': COLOR_SERGARIS_GRAY,
+        'checkbox_check': COLOR_SERGARIS_ORANGE,
+        'gameover': COLOR_SERGARIS_ORANGE,
+    }
+
+THEME_DEFINITIONS = {
+    "default": {
+        "title": "Default Theme",
+        "palette": {
             'background': COLOR_BACKGROUND,
             'grid': COLOR_GRID,
             'snake': COLOR_SNAKE,
@@ -138,35 +162,41 @@ def set_theme(theme_name):
             'checkbox_check': COLOR_CHECKBOX_CHECK,
             'gameover': COLOR_GAMEOVER
         }
-
-def generate_tyamba_gradient_colors():
-    """Генерирует набор цветов для градиента темы Tyamba на основе COLOR_TYAMBA."""
-    base_color = COLOR_TYAMBA
-    darker = pygame.Color(base_color.r // 2, base_color.g // 2, base_color.b // 2)
-    lighter = pygame.Color(min(base_color.r + 70, 255), min(base_color.g + 70, 255), min(base_color.b + 70, 255))
-    accent = pygame.Color(min(base_color.r + 50, 255), min(base_color.g, 255), min(base_color.b + 80, 255))
-    
-    return {
-        'background': darker,
-        'grid': base_color,
-        'snake': lighter,
-        'snake_head': accent,
-        'snake_head_gradient': pygame.Color(min(accent.r + 30, 255), min(accent.g + 30, 255), min(accent.b, 255)),
-        'snake_tail': pygame.Color(int(base_color.r // 1.5), int(base_color.g // 1.5), int(base_color.b // 1.5)),
-        'food': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
-        'text': pygame.Color(220, 220, 220),
-        'text_highlight': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 120, 255), min(base_color.b + 20, 255)),
-        'button': lighter,
-        'button_hover': accent,
-        'button_click': pygame.Color(min(base_color.r, 255), min(base_color.g + 60, 255), min(base_color.b + 60, 255)),
-        'slider_bg': base_color,
-        'slider_handle': accent,
-        'panel_bg': pygame.Color(int(darker.r), int(darker.g), int(darker.b), 210),
-        'checkbox_border': pygame.Color(200, 200, 200),
-        'checkbox_check': accent,
-        'gameover': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
-        'path_visualization': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 60, 255), min(base_color.b, 255))
+    },
+    "tyamba": {
+        "title": "Tyamba Theme",
+        "palette": _generate_tyamba_colors()
+    },
+    "sergaris": {
+        "title": "Sergaris Theme",
+        "palette": _generate_sergaris_colors()
     }
+}
+# --- Конец централизованного определения тем ---
+
+# --- Глобальные переменные для хранения текущей темы ---
+current_theme = "default"
+# Заполняем начальные цвета из темы по умолчанию
+current_colors = THEME_DEFINITIONS["default"]["palette"].copy()
+
+def set_theme(theme_name):
+    """Устанавливает цветовую тему игры, используя THEME_DEFINITIONS."""
+    global current_theme, current_colors
+    
+    # Проверяем, существует ли тема, иначе используем 'default'
+    if theme_name not in THEME_DEFINITIONS:
+        print(f"Warning: Theme '{theme_name}' not found. Using default theme.")
+        theme_name = "default"
+        
+    current_theme = theme_name
+    # Получаем палитру из централизованного определения
+    new_palette = THEME_DEFINITIONS[theme_name]["palette"]
+    
+    # Обновляем текущие цвета. Используем .get() с запасным вариантом из default,
+    # на случай, если какая-то тема не определила все цвета.
+    default_palette = THEME_DEFINITIONS["default"]["palette"]
+    for key in default_palette:
+        current_colors[key] = new_palette.get(key, default_palette[key])
 
 def draw_object(surface, color, pos):
     rect = pygame.Rect((pos[0] * GRIDSIZE, pos[1] * GRIDSIZE), (GRIDSIZE, GRIDSIZE))
@@ -341,6 +371,133 @@ class Checkbox:
         label_rect.centery = self.rect.centery + 3
         self.label_rect = label_rect # Сохраняем Rect метки
         surface.blit(label_surf, label_rect)
+
+class ThemeSelector:
+    """Класс для визуального выбора темы списком."""
+    
+    def __init__(self, x, y, width, current_theme_name="default"): # Изменен параметр themes_list на current_theme_name
+        self.x = x
+        self.y = y
+        self.width = width
+        # Получаем информацию о темах из центрального словаря
+        self.themes = [{"name": name, "title": data["title"]} for name, data in THEME_DEFINITIONS.items()]
+        self.selected_index = 0
+        self.current_theme_name = current_theme_name # Храним имя текущей темы
+        
+        # Находим индекс текущей темы
+        for i, theme in enumerate(self.themes):
+            if theme["name"] == self.current_theme_name:
+                self.selected_index = i
+                break
+                
+        # Настройки отрисовки списка
+        self.item_height = 40 # Высота одного элемента списка
+        self.padding = 5
+        self.preview_size = self.item_height - 2 * self.padding
+        self.title_height = 30 # Высота заголовка "Theme Selection"
+        self.total_height = self.title_height + len(self.themes) * self.item_height + self.padding
+        self.rect = pygame.Rect(x, y, width, self.total_height) # Общий Rect для виджета
+        
+        try:
+            self.font = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
+            self.title_font = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM, bold=True)
+        except:
+            self.font = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
+            self.title_font = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2, bold=True)
+            
+        # Предварительный рендеринг превью тем (маленькие иконки)
+        self.theme_previews = self._generate_theme_previews()
+        
+    def _generate_theme_previews(self):
+        """Генерирует маленькие иконки-превью для каждой темы, используя THEME_DEFINITIONS."""
+        previews = []
+        
+        for theme_info in self.themes:
+            theme_name = theme_info["name"]
+            # Получаем палитру напрямую из THEME_DEFINITIONS
+            try:
+                theme_palette = THEME_DEFINITIONS[theme_name]["palette"]
+            except KeyError:
+                print(f"Warning: Palette for theme '{theme_name}' not found in THEME_DEFINITIONS during preview generation. Skipping.")
+                # Можно добавить заглушку или использовать default
+                theme_palette = THEME_DEFINITIONS["default"]["palette"]
+
+            # Создаем превью поверхность
+            preview = pygame.Surface((self.preview_size, self.preview_size))
+            
+            # Заполняем фоном из палитры
+            preview.fill(theme_palette['background'])
+            
+            # Рисуем 4 цветных квадратика для отображения основных цветов
+            sq_size = self.preview_size // 2
+            pygame.draw.rect(preview, theme_palette['snake_head'], (0, 0, sq_size, sq_size))
+            pygame.draw.rect(preview, theme_palette['snake'], (sq_size, 0, sq_size, sq_size))
+            pygame.draw.rect(preview, theme_palette['food'], (0, sq_size, sq_size, sq_size))
+            pygame.draw.rect(preview, theme_palette['grid'], (sq_size, sq_size, sq_size, sq_size))
+            
+            previews.append(preview)
+        
+        return previews
+    
+    def handle_event(self, event):
+        """Обрабатывает события клика для выбора темы из списка."""
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Проверяем клик по элементам списка
+            mouse_x, mouse_y = event.pos
+            current_y = self.y + self.title_height + self.padding
+            for i in range(len(self.themes)):
+                item_rect = pygame.Rect(self.x, current_y, self.width, self.item_height)
+                if item_rect.collidepoint(mouse_x, mouse_y):
+                    self.selected_index = i
+                    self.current_theme_name = self.themes[self.selected_index]["name"] # Обновляем имя темы
+                    # Применяем выбранную тему через set_theme
+                    set_theme(self.current_theme_name)
+                    # Обновляем превью, если нужно (на случай динамических тем в будущем)
+                    # self.theme_previews = self._generate_theme_previews() # Пока не требуется
+                    return True # Сигнал, что тема изменилась
+                current_y += self.item_height
+        
+        return False
+            
+    def draw(self, surface):
+        """Отрисовывает селектор тем в виде списка."""
+        # Отрисовка заголовка
+        title_surf = self.title_font.render("Theme Selection", True, current_colors['text_highlight'])
+        title_rect = title_surf.get_rect(centerx=self.rect.centerx, top=self.rect.top)
+        surface.blit(title_surf, title_rect)
+        
+        # Отрисовка элементов списка
+        current_y = self.y + self.title_height + self.padding
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        
+        for i, theme in enumerate(self.themes):
+            item_rect = pygame.Rect(self.x, current_y, self.width, self.item_height)
+            is_hovered = item_rect.collidepoint(mouse_x, mouse_y)
+            is_selected = (i == self.selected_index)
+            
+            # Фон элемента (легкое затемнение при наведении)
+            if is_hovered:
+                item_bg_color = current_colors['background'].lerp(pygame.Color(100,100,100), 0.1)
+                pygame.draw.rect(surface, item_bg_color, item_rect, border_radius=4)
+            
+            # Превью-иконка
+            preview_x = self.x + self.padding
+            preview_y = current_y + self.padding
+            surface.blit(self.theme_previews[i], (preview_x, preview_y))
+            
+            # Название темы
+            text_x = preview_x + self.preview_size + self.padding * 2
+            theme_name = theme["title"]
+            text_color = current_colors['text_highlight'] if is_selected else current_colors['text']
+            name_surf = self.font.render(theme_name, True, text_color)
+            name_rect = name_surf.get_rect(left=text_x, centery=item_rect.centery)
+            surface.blit(name_surf, name_rect)
+            
+            # Рамка для выбранного элемента
+            if is_selected:
+                pygame.draw.rect(surface, current_colors['text_highlight'], item_rect, 2, border_radius=4)
+            
+            current_y += self.item_height
 
 class PathFind:
     def __init__(self):
@@ -1238,7 +1395,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     slider_height = 25
     checkbox_size = 25
     widget_x = SCREEN_WIDTH // 2 - slider_width // 2
-    y_pos = SCREEN_HEIGHT // 2 - 140 # Начальная Y позиция
+    y_pos = SCREEN_HEIGHT // 2 - 150 # Начальная Y позиция, немного выше
 
     # --- Устанавливаем min_val = 5 для слайдера скорости ---
     speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed", power=2.5)
@@ -1254,10 +1411,19 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     # --- Добавляем чекбокс для визуализации пути --- 
     y_pos += 45 # Уменьшаем отступ перед следующим чекбоксом
     show_path_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Show AI Path", current_show_path)
-    # --- Добавляем чекбокс для Tyamba Theme ---
-    y_pos += 45
-    tyamba_theme_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Tyamba Theme", current_theme == "tyamba")
-    y_pos += 70 # Возвращаем стандартный отступ перед кнопками
+    
+    # --- Создаем селектор тем ---
+    y_pos += 60 # Немного уменьшаем отступ сверху
+    themes_list = [
+        {"name": "default", "title": "Default Theme"},
+        {"name": "tyamba", "title": "Tyamba Theme"},
+        {"name": "sergaris", "title": "Sergaris Theme"}
+    ]
+    # Создаем экземпляр селектора, передаем ширину слайдеров
+    theme_selector = ThemeSelector(widget_x, y_pos, slider_width, current_theme_name=current_theme)
+    
+    # Обновляем Y позицию на основе реальной высоты селектора
+    y_pos += theme_selector.total_height + 40 # Добавляем отступ перед кнопками
     # --- Конец добавления --- 
 
     button_width = 180
@@ -1270,12 +1436,44 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     reset_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, y_pos)
     back_button_rect.topleft = (reset_button_rect.right + button_spacing, y_pos)
 
+    # --- Переменные для скроллинга --- 
+    scroll_y = 0
+    content_height = y_pos + button_height + 40 # Общая высота контента (добавим отступ внизу)
+    view_height = SCREEN_HEIGHT
+    scrollbar_width = 15
+    scrollbar_margin = 5
+    scrollbar_x = SCREEN_WIDTH - scrollbar_width - scrollbar_margin
+    scrollbar_rect = pygame.Rect(scrollbar_x, scrollbar_margin, scrollbar_width, 0)
+    scrollbar_handle_rect = pygame.Rect(scrollbar_x, scrollbar_margin, scrollbar_width, 0)
+    dragging_scrollbar = False
+    drag_start_y = 0
+    drag_scroll_start_y = 0
+    # --- Конец добавления --- 
+
     running = True
     while running:
         mouse_pos = pygame.mouse.get_pos()
-        is_back_hovered = back_button_rect.collidepoint(mouse_pos)
+        
+        # --- Учитываем скролл для координат мыши --- 
+        scroll_mouse_pos = (mouse_pos[0], mouse_pos[1] + scroll_y)
+        # --- Конец --- 
+        
+        # --- Обновляем геометрию скроллбара --- 
+        if content_height > view_height:
+            scrollbar_rect.height = view_height - 2 * scrollbar_margin
+            handle_height = max(20, scrollbar_rect.height * (view_height / content_height))
+            scrollbar_handle_rect.height = handle_height
+            
+            scroll_ratio = scroll_y / (content_height - view_height)
+            scrollbar_handle_rect.y = scrollbar_margin + scroll_ratio * (scrollbar_rect.height - handle_height)
+        else:
+            scrollbar_rect.height = 0
+            scrollbar_handle_rect.height = 0
+        # --- Конец --- 
+
+        is_back_hovered = back_button_rect.collidepoint(scroll_mouse_pos)
         is_back_clicked = False
-        is_reset_hovered = reset_button_rect.collidepoint(mouse_pos)
+        is_reset_hovered = reset_button_rect.collidepoint(scroll_mouse_pos)
         is_reset_clicked = False
 
         for event in pygame.event.get():
@@ -1285,18 +1483,47 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     pygame.quit()
                     sys.exit()
                 # --- Конец передачи --- 
+            
+            # --- Обработка скроллбара --- 
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if scrollbar_handle_rect.height > 0 and scrollbar_handle_rect.collidepoint(mouse_pos):
+                    dragging_scrollbar = True
+                    drag_start_y = mouse_pos[1]
+                    drag_scroll_start_y = scroll_y
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                dragging_scrollbar = False
+            elif event.type == pygame.MOUSEMOTION:
+                if dragging_scrollbar:
+                    delta_y = mouse_pos[1] - drag_start_y
+                    max_scroll_handle_y = scrollbar_rect.height - scrollbar_handle_rect.height
+                    handle_y = scrollbar_margin + scroll_ratio * max_scroll_handle_y + delta_y
+                    handle_y = max(scrollbar_margin, min(handle_y, scrollbar_margin + max_scroll_handle_y))
+                    
+                    new_scroll_ratio = (handle_y - scrollbar_margin) / max_scroll_handle_y
+                    scroll_y = new_scroll_ratio * (content_height - view_height)
+                    scroll_y = max(0, min(scroll_y, content_height - view_height))
+            elif event.type == pygame.MOUSEWHEEL:
+                if content_height > view_height:
+                    scroll_y -= event.y * 30 # Множитель для скорости прокрутки
+                    scroll_y = max(0, min(scroll_y, content_height - view_height))
+            # --- Конец --- 
+            
+            # --- Передаем scroll_mouse_pos в обработчики виджетов --- 
+            adjusted_event = event
+            if event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+                adjusted_event = pygame.event.Event(event.type, {'pos': scroll_mouse_pos, 'button': event.button if hasattr(event, 'button') else 1})
+            
+            speed_slider.handle_event(adjusted_event)
+            volume_slider.handle_event(adjusted_event)
+            fill_slider.handle_event(adjusted_event)
+            mute_checkbox.handle_event(adjusted_event)
+            show_path_checkbox.handle_event(adjusted_event)
+            
+            # ThemeSelector теперь сам вызывает set_theme при изменении
+            theme_selector.handle_event(adjusted_event)
+            # --- Конец --- 
 
-            speed_slider.handle_event(event)
-            volume_slider.handle_event(event)
-            fill_slider.handle_event(event)
-            mute_checkbox.handle_event(event)
-            # --- Обрабатываем события нового чекбокса --- 
-            show_path_checkbox.handle_event(event)
-            # --- Обрабатываем события чекбокса Tyamba Theme ---
-            tyamba_theme_checkbox.handle_event(event)
-            # --- Конец обработки --- 
-
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and not dragging_scrollbar:
                 if is_back_hovered:
                     is_back_clicked = True
                     if eat_sound:
@@ -1311,15 +1538,20 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     selected_volume = 1
                     is_muted = False
                     selected_fill_percent = 0
-                    # --- Сбрасываем и визуализацию пути --- 
-                    should_show_path = False # По умолчанию НЕ показываем путь
-                    # --- Сбрасываем тему к стандартной ---
+                    should_show_path = False
                     selected_theme = "default"
-                    tyamba_theme_checkbox.checked = False
-                    # Применяем стандартную тему сразу
-                    set_theme(selected_theme)
-                    # --- Конец сброса --- 
-                    # Обновляем виджеты
+                    
+                    # Обновляем состояние селектора тем и применяем тему
+                    theme_selector.current_theme_name = selected_theme
+                    # Используем self.themes селектора для поиска индекса
+                    for i, theme in enumerate(theme_selector.themes):
+                        if theme["name"] == selected_theme:
+                            theme_selector.selected_index = i
+                            break
+                    set_theme(selected_theme) # Применяем сброшенную тему
+                    
+                    scroll_y = 0 # Сбрасываем скролл при ресете
+                    
                     speed_slider.value = selected_speed
                     speed_slider.update_handle_pos()
                     volume_slider.value = selected_volume
@@ -1327,9 +1559,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     fill_slider.value = selected_fill_percent
                     fill_slider.update_handle_pos()
                     mute_checkbox.checked = is_muted
-                    # --- Обновляем чекбокс пути --- 
                     show_path_checkbox.checked = should_show_path
-                    # --- Конец обновления --- 
+                    
                     if eat_sound:
                         eat_sound.set_volume(0 if is_muted else selected_volume / 100)
             elif event.type == pygame.KEYDOWN:
@@ -1341,34 +1572,85 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         selected_volume = volume_slider.value
         is_muted = mute_checkbox.checked
         selected_fill_percent = fill_slider.value
-        # --- Получаем значение нового чекбокса --- 
         should_show_path = show_path_checkbox.checked
-        # --- Получаем значение чекбокса Tyamba Theme ---
-        selected_theme = "tyamba" if tyamba_theme_checkbox.checked else "default"
+        selected_theme = theme_selector.current_theme_name # Берем имя из селектора
         
-        # Применяем тему сразу при изменении
-        if current_theme != selected_theme:
-            set_theme(selected_theme)
-            current_theme = selected_theme
-        # --- Конец получения --- 
-
         if eat_sound:
             eat_sound.set_volume(0 if is_muted else selected_volume / 100)
 
         # Отрисовка
         surface.fill(current_colors['background'])
-        surface.blit(title_surf, title_rect)
-        speed_slider.draw(surface)
-        volume_slider.draw(surface)
-        fill_slider.draw(surface)
-        mute_checkbox.draw(surface)
-        # --- Рисуем новый чекбокс --- 
-        show_path_checkbox.draw(surface)
-        # --- Рисуем чекбокс Tyamba Theme ---
-        tyamba_theme_checkbox.draw(surface)
-        # --- Конец отрисовки --- 
-        draw_button(surface, back_button_rect, current_colors['button'], "Back", is_back_hovered, is_back_clicked)
-        draw_button(surface, reset_button_rect, current_colors['text_highlight'], "Reset", is_reset_hovered, is_reset_clicked)
+        
+        # --- Создаем временную поверхность для контента --- 
+        content_surface = pygame.Surface((SCREEN_WIDTH, content_height))
+        content_surface.fill(current_colors['background'])
+        # --- Конец --- 
+        
+        # --- Рисуем заголовок на основной поверхности (он не скроллится) --- 
+        title_rect_onscreen = title_surf.get_rect(center=(SCREEN_WIDTH // 2, 60)) # Фиксируем Y
+        surface.blit(title_surf, title_rect_onscreen)
+        # --- Конец --- 
+        
+        # --- Корректируем Y координаты для отрисовки виджетов на content_surface --- 
+        y_pos_draw = 150 # Начальная Y позиция для отрисовки контента
+        
+        # Сохраняем/восстанавливаем rect виджетов, чтобы handle_event работал с исходными координатами
+        original_speed_rect = speed_slider.rect.copy()
+        speed_slider.rect.topleft = (widget_x, y_pos_draw)
+        speed_slider.draw(content_surface)
+        speed_slider.rect = original_speed_rect
+        y_pos_draw += 70
+        
+        original_volume_rect = volume_slider.rect.copy()
+        volume_slider.rect.topleft = (widget_x, y_pos_draw)
+        volume_slider.draw(content_surface)
+        volume_slider.rect = original_volume_rect
+        y_pos_draw += 70
+        
+        original_fill_rect = fill_slider.rect.copy()
+        fill_slider.rect.topleft = (widget_x, y_pos_draw)
+        fill_slider.draw(content_surface)
+        fill_slider.rect = original_fill_rect
+        y_pos_draw += 70
+        
+        original_mute_rect = mute_checkbox.rect.copy()
+        mute_checkbox.rect.topleft = (widget_x, y_pos_draw)
+        mute_checkbox.draw(content_surface)
+        mute_checkbox.rect = original_mute_rect
+        y_pos_draw += 45
+        
+        original_show_path_rect = show_path_checkbox.rect.copy()
+        show_path_checkbox.rect.topleft = (widget_x, y_pos_draw)
+        show_path_checkbox.draw(content_surface)
+        show_path_checkbox.rect = original_show_path_rect
+        y_pos_draw += 60
+        
+        original_theme_rect = theme_selector.rect.copy()
+        theme_selector.rect.topleft = (widget_x, y_pos_draw)
+        theme_selector.draw(content_surface)
+        theme_selector.rect = original_theme_rect
+        y_pos_draw += theme_selector.total_height + 40
+        
+        original_reset_rect = reset_button_rect.copy()
+        original_back_rect = back_button_rect.copy()
+        reset_button_rect.topleft = (SCREEN_WIDTH // 2 - total_width // 2, y_pos_draw)
+        back_button_rect.topleft = (reset_button_rect.right + button_spacing, y_pos_draw)
+        draw_button(content_surface, back_button_rect, current_colors['button'], "Back", is_back_hovered, is_back_clicked)
+        draw_button(content_surface, reset_button_rect, current_colors['text_highlight'], "Reset", is_reset_hovered, is_reset_clicked)
+        reset_button_rect = original_reset_rect
+        back_button_rect = original_back_rect
+        # --- Конец --- 
+
+        # --- Копируем видимую часть content_surface на основной экран --- 
+        visible_content_rect = pygame.Rect(0, scroll_y, SCREEN_WIDTH - (scrollbar_width + 2 * scrollbar_margin if scrollbar_rect.height > 0 else 0), view_height)
+        surface.blit(content_surface, (0, 0), visible_content_rect)
+        # --- Конец --- 
+        
+        # --- Рисуем скроллбар поверх всего --- 
+        if scrollbar_rect.height > 0:
+            pygame.draw.rect(surface, current_colors['slider_bg'], scrollbar_rect, border_radius=7)
+            pygame.draw.rect(surface, current_colors['slider_handle'], scrollbar_handle_rect, border_radius=7)
+        # --- Конец --- 
 
         pygame.display.update()
         clock.tick(60)
@@ -1455,9 +1737,20 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
                             current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme = settings_screen(
                                 surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme
                             )
+                            # Обновляем локальную current_theme после возврата из настроек
+
+                            # set_theme уже вызывается внутри settings_screen при выборе темы или сбросе
                             # --- Конец передачи/получения --- 
                             if eat_sound:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
+                            # --- Обновляем цвета кнопок после возврата из настроек --- 
+                            buttons["manual"]["color"] = current_colors['button']
+                            buttons["auto"]["color"] = current_colors['button']
+                            buttons["settings"]["color"] = current_colors['text_highlight']
+                            buttons["quit"]["color"] = current_colors['button']
+                            # Обновляем цвет заголовка, если он зависит от темы
+                            title_surf = font_title.render("Modern Snake", True, current_colors['text_white'])
+                            # --- Конец обновления --- 
                         elif key == 'quit':
                             # --- Передаем clock --- 
                             if confirmation_dialog(surface, clock, "Quit Game?"):
@@ -1918,4 +2211,6 @@ if __name__ == '__main__':
     # --- Убираем clock отсюда, он теперь в main --- 
     # clock = pygame.time.Clock()
     # --- Конец уборки --- 
+    # Вызываем set_theme один раз при инициализации, чтобы убедиться, что цвета установлены
+    set_theme("default")
     main()
