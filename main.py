@@ -610,6 +610,11 @@ class Snake:
         self.current_path: List[Tuple[int, int]] = []
         self.positions_set: set[Tuple[int, int]] = set(self.positions)
         self.survival_mode_steps_remaining = 0
+        self._segments_colors_cache = []
+        self._last_cache_segments = 0
+        self._colors_theme_cache = current_theme
+        self._neighboring_segments_cache: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {}
+        self._update_caches()
 
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
@@ -623,59 +628,118 @@ class Snake:
                 self.positions_set = set(self.positions)
             else:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}%, starting with default.")
-
-    def draw(self, surface):
-        num_segments = len(self.positions)
-        if num_segments == 0:
-            return
-
-        head_pos = self.positions[0]
-        draw_object(surface, current_colors['snake_head'], head_pos)
-
-        if num_segments > 1:
+    
+    def _update_colors_cache(self, num_segments):
+        """Обновляет кэш цветов для сегментов змейки."""
+        if (num_segments != self._last_cache_segments or 
+            self._colors_theme_cache != current_theme):
+            
+            self._segments_colors_cache = []
             head_color = current_colors['snake_head_gradient']
             body_color = current_colors['snake']
             tail_color = current_colors['snake_tail']
-
-            for i, current_pos in enumerate(itertools.islice(self.positions, 1, None)):
-                original_index = i + 1
-                progress = (original_index - 1) / (num_segments - 1) if num_segments > 1 else 0
-                segment_color: pygame.Color = pygame.Color(0, 0, 0)
+            
+            # Кэшируем цвета для всех возможных сегментов
+            for i in range(1, num_segments):
+                progress = (i - 1) / (num_segments - 1) if num_segments > 1 else 0
+                segment_color = pygame.Color(0, 0, 0)
+                
                 if progress < 0.5:
                     local_progress = progress / 0.5
                     segment_color = head_color.lerp(body_color, local_progress)
                 else:
                     local_progress = (progress - 0.5) / 0.5
                     segment_color = body_color.lerp(tail_color, local_progress)
-                draw_object(surface, segment_color, current_pos)
+                
+                self._segments_colors_cache.append(segment_color)
+            
+            self._last_cache_segments = num_segments
+            self._colors_theme_cache = current_theme
+            
+    def _update_neighboring_segments_cache(self):
+        """Обновляет кэш соседних сегментов."""
+        self._neighboring_segments_cache = {}
+        num_segments = len(self.positions)
+        for i, pos in enumerate(self.positions):
+            neighbors = set()
+            if i > 0:
+                prev_pos = self.positions[i-1]
+                neighbors.add(prev_pos)
+            if i < num_segments - 1:
+                next_pos = self.positions[i+1]
+                neighbors.add(next_pos)
+            if neighbors: # Добавляем в кэш только если есть соседи
+                self._neighboring_segments_cache[pos] = neighbors
+                
+    def _update_caches(self):
+        """Обновляет все кэши."""
+        num_segments = len(self.positions)
+        self._update_colors_cache(num_segments)
+        self._update_neighboring_segments_cache()
 
-        if num_segments > 1:
-            internal_border_color = current_colors['grid']
-            line_width = 1
-            for i, current_pos in enumerate(self.positions): # Итерируем по ВСЕМ сегментам deque
-                x, y = current_pos
-                x_px, y_px = x * GRIDSIZE, y * GRIDSIZE
+    def draw(self, surface):
+        num_segments = len(self.positions)
+        if num_segments == 0:
+            return
 
-                prev_actual_pos = self.positions[i-1] if i > 0 else None
-                next_actual_pos = self.positions[i+1] if i < num_segments - 1 else None
+        # Отрисовка головы
+        head_pos = self.positions[0]
+        draw_object(surface, current_colors['snake_head'], head_pos)
 
-                neighbor_right = ((x + 1) % GRID_WIDTH, y)
-                if (neighbor_right in self.positions_set and
-                    neighbor_right != prev_actual_pos and
-                    neighbor_right != next_actual_pos):
-                    pygame.draw.line(surface, internal_border_color,
-                                     (x_px + GRIDSIZE - line_width, y_px),
-                                     (x_px + GRIDSIZE - line_width, y_px + GRIDSIZE -1),
-                                     line_width)
+        # Если змейка состоит только из головы, дальше не рисуем
+        if num_segments <= 1:
+            return
 
-                neighbor_down = (x, (y + 1) % GRID_HEIGHT)
-                if (neighbor_down in self.positions_set and
-                    neighbor_down != prev_actual_pos and
-                    neighbor_down != next_actual_pos):
-                    pygame.draw.line(surface, internal_border_color,
-                                     (x_px, y_px + GRIDSIZE - line_width),
-                                     (x_px + GRIDSIZE - 1, y_px + GRIDSIZE - line_width),
-                                     line_width)
+        # Обновляем кэш цветов, если нужно (теперь вызывается из _update_caches)
+        # self._update_colors_cache(num_segments)
+        
+        # Оптимизированная отрисовка сегментов тела
+        segment_positions = list(itertools.islice(self.positions, 1, None))
+        for i, current_pos in enumerate(segment_positions):
+            segment_color = self._segments_colors_cache[i]
+            draw_object(surface, segment_color, current_pos)
+
+        # Отрисовка внутренних границ
+        # Это самая затратная часть - попробуем оптимизировать проверки
+        internal_border_color = current_colors['grid']
+        line_width = 1
+        
+        # Для эффективной проверки, создадим словарь с координатами соседних сегментов
+        # neighboring_segments = {} # Убрано - используем кэш
+        # for i, pos in enumerate(self.positions):
+        #     if i > 0:
+        #         prev_pos = self.positions[i-1]
+        #         neighboring_segments[pos] = neighboring_segments.get(pos, set())
+        #         neighboring_segments[pos].add(prev_pos)
+        #     if i < num_segments - 1:
+        #         next_pos = self.positions[i+1]
+        #         neighboring_segments[pos] = neighboring_segments.get(pos, set())
+        #         neighboring_segments[pos].add(next_pos)
+        
+        # Теперь проходим только 1 раз по всем сегментам
+        for current_pos in self.positions:
+            x, y = current_pos
+            x_px, y_px = x * GRIDSIZE, y * GRIDSIZE
+            neighbor_right = ((x + 1) % GRID_WIDTH, y)
+            neighbor_down = (x, (y + 1) % GRID_HEIGHT)
+            
+            neighbors = self._neighboring_segments_cache.get(current_pos, set()) # Используем кэш
+            
+            # Проверяем правого соседа
+            if (neighbor_right in self.positions_set and 
+                neighbor_right not in neighbors):
+                pygame.draw.line(surface, internal_border_color,
+                                (x_px + GRIDSIZE - line_width, y_px),
+                                (x_px + GRIDSIZE - line_width, y_px + GRIDSIZE - 1),
+                                line_width)
+            
+            # Проверяем нижнего соседа
+            if (neighbor_down in self.positions_set and 
+                neighbor_down not in neighbors):
+                pygame.draw.line(surface, internal_border_color,
+                                (x_px, y_px + GRIDSIZE - line_width),
+                                (x_px + GRIDSIZE - 1, y_px + GRIDSIZE - line_width),
+                                line_width)
 
     def get_head_position(self):
         return self.positions[0]
@@ -788,6 +852,16 @@ class Snake:
         """Обновляет позицию змейки: добавляет голову, удаляет хвост (если не растет), проверяет коллизии."""
         collision = False
         tail_pos = self.positions[-1] if len(self.positions) > 0 else None
+        
+        grows = (new_head_pos == self.current_food_pos)
+        structure_changed = grows
+        if not grows and self.positions:
+             removed_tail = self.positions[-1]
+             if removed_tail != new_head_pos:
+                 structure_changed = True
+        elif not self.positions:
+             structure_changed = True
+        
         if new_head_pos in self.positions_set and new_head_pos != tail_pos:
              collision = True
 
@@ -796,8 +870,6 @@ class Snake:
 
         self.positions_set.add(new_head_pos)
         self.positions.appendleft(new_head_pos)
-
-        grows = (new_head_pos == self.current_food_pos)
 
         if not grows:
             if self.positions:
@@ -813,6 +885,10 @@ class Snake:
              self.path = []
 
         self.history.append((history_positions, history_food_pos))
+        
+        # Обновляем кэши, ТОЛЬКО если структура змейки изменилась
+        if structure_changed:
+            self._update_caches()
 
         return collision
 
@@ -881,16 +957,13 @@ class Snake:
         for direction in possible_directions:
             next_head = ((head[0] + direction[0]) % GRID_WIDTH, (head[1] + direction[1]) % GRID_HEIGHT)
 
-            # 1. Проверяем, не ведет ли ход сразу в тело (кроме хвоста)
             if len(self.positions) > 1 and next_head in itertools.islice(self.positions, 0, len(self.positions) - 1):
                  continue
 
-            # 2. Симулируем этот один шаг (змейка НЕ растет)
             sim_snake_list = self.simulate_move([head, next_head], grows=False, initial_state=current_positions_list)
             if sim_snake_list is None:
                 continue
 
-            # 3. Ищем путь от новой головы к новому хвосту в симулированном состоянии
             sim_head = sim_snake_list[0]
             sim_tail = sim_snake_list[-1]
             path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
@@ -918,18 +991,15 @@ class Snake:
 
         current_positions_list = list(self.positions)
 
-        # 1. Симулируем движение к еде и ее поедание (grows=True)
         sim_snake_after_eat = self.simulate_move(path_to_food, grows=True, initial_state=current_positions_list)
 
         if sim_snake_after_eat is None:
             return False
 
-        # 2. Проверяем, есть ли путь от новой головы (где была еда) до нового хвоста
         sim_head = sim_snake_after_eat[0]
         sim_tail = sim_snake_after_eat[-1]
         path_to_tail_after_eat = self.path_find.find_path(sim_head, sim_tail, sim_snake_after_eat)
 
-        # Если путь до хвоста существует, считаем путь к еде безопасным
         return bool(path_to_tail_after_eat)
 
     def simulate_move(self, path: List[Tuple[int, int]], grows: bool, initial_state: List[Tuple[int, int]] | None = None) -> List[Tuple[int, int]] | None:
@@ -940,22 +1010,18 @@ class Snake:
         `initial_state`: Опциональное начальное состояние (список) для симуляции.
         """
         if not path or len(path) <= 1:
-            # Если путь пуст или состоит только из текущей головы, возвращаем исходное состояние
             return list(self.positions) if initial_state is None else initial_state
 
         sim_snake = deque(initial_state if initial_state is not None else self.positions)
         current_path = path[1:]
 
         for i, step in enumerate(current_path):
-            # Проверка на самопересечение в симуляции: нельзя врезаться в сегмент,
-            # который НЕ станет хвостом на следующем шаге симуляции.
             if len(sim_snake) > 1 and step in itertools.islice(sim_snake, 0, len(sim_snake) - 1):
                  return None
 
             sim_snake.appendleft(step)
 
             is_last_step = (i == len(current_path) - 1)
-            # Удаляем хвост, если это не последний шаг ИЛИ если это последний шаг, но змейка не растет
             if not (is_last_step and grows):
                 sim_snake.pop()
 
@@ -989,6 +1055,8 @@ class Snake:
                 self.positions_set = set(self.positions)
             else:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
+
+        self._update_caches() # Обновляем кэши при ресете
 
 class Food:
     def __init__(self):
@@ -1271,7 +1339,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     scrollbar_handle_rect = pygame.Rect(scrollbar_x, scrollbar_margin, scrollbar_width, 0)
     dragging_scrollbar = False
     drag_start_y = 0
-    drag_scroll_start_y = 0
 
     running = True
     while running:
@@ -1280,15 +1347,16 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         scroll_mouse_pos = (mouse_pos[0], mouse_pos[1] + scroll_y)
         
         if content_height > view_height:
-            scrollbar_rect.height = view_height - 2 * scrollbar_margin
-            handle_height = max(20, scrollbar_rect.height * (view_height / content_height))
-            scrollbar_handle_rect.height = handle_height
-            
+            scrollbar_height = int(view_height - 2 * scrollbar_margin)
+            handle_height = int(max(20, round(scrollbar_height * (view_height / content_height))))
             scroll_ratio = scroll_y / (content_height - view_height)
-            scrollbar_handle_rect.y = scrollbar_margin + scroll_ratio * (scrollbar_rect.height - handle_height)
+            handle_y = int(scrollbar_margin + int(scroll_ratio * (scrollbar_height - handle_height)))
+            
+            scrollbar_rect = pygame.Rect(int(scrollbar_x), int(scrollbar_margin), int(scrollbar_width), scrollbar_height)
+            scrollbar_handle_rect = pygame.Rect(int(scrollbar_x), handle_y, int(scrollbar_width), handle_height)
         else:
-            scrollbar_rect.height = 0
-            scrollbar_handle_rect.height = 0
+            scrollbar_rect = pygame.Rect(int(scrollbar_x), int(scrollbar_margin), int(scrollbar_width), 0)
+            scrollbar_handle_rect = pygame.Rect(int(scrollbar_x), int(scrollbar_margin), int(scrollbar_width), 0)
 
         is_back_hovered = back_button_rect.collidepoint(scroll_mouse_pos)
         is_back_clicked = False
@@ -1305,7 +1373,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                 if scrollbar_handle_rect.height > 0 and scrollbar_handle_rect.collidepoint(mouse_pos):
                     dragging_scrollbar = True
                     drag_start_y = mouse_pos[1]
-                    drag_scroll_start_y = scroll_y
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 dragging_scrollbar = False
             elif event.type == pygame.MOUSEMOTION:
@@ -1644,7 +1711,6 @@ def confirmation_dialog(surface, clock, question) -> bool:
         pygame.display.update()
         clock.tick(60)
 
-
 def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[int, int]:
     """Вычисляет вектор (dx, dy) от pos1 к pos2, учитывая зацикленность поля."""
     x1, y1 = pos1
@@ -1670,21 +1736,20 @@ def draw_fps_graph(surface: Surface, history: Deque[float], x: int, y: int, widt
     if not history:
         return
     history_len = len(history)
-    max_fps_hist = max(history)
-    dynamic_max_y = max(30.0, max_fps_hist * 1.1)
+    max_fps_hist = 1.0
+    if history_len > 0:
+        max_fps_hist = max(history)
+    dynamic_max_y = max(60.0, max_fps_hist * 1.1)
  
     points = []
     for i, fps in enumerate(history):
-        normalized_y = 1.0 - max(0.0, min(1.0, fps / dynamic_max_y))
+        normalized_y = 1.0 - max(0.0, min(1.0, fps / dynamic_max_y if dynamic_max_y > 1e-6 else 0.0))
         point_x = x + int((i / (history_len - 1 if history_len > 1 else 1)) * width)
         point_y = y + int(normalized_y * height)
         points.append((point_x, point_y))
 
     if len(points) >= 2:
-        try:
-            pygame.draw.aalines(surface, color, False, points)
-        except TypeError:
-            pygame.draw.lines(surface, color, False, points, 1)
+        pygame.draw.lines(surface, color, False, points, 1)
     elif len(points) == 1:
         pygame.draw.circle(surface, color, points[0], 2)
 
@@ -1709,7 +1774,7 @@ def main():
     current_fill_percent = 0
     show_path_visualization = False
     current_theme = "default"
-    fps_history: Deque[float] = deque(maxlen=3333)
+    fps_history: Deque[float] = deque(maxlen=200)
 
     while True:
         mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path, updated_theme = start_screen(

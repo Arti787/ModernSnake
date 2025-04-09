@@ -34,3 +34,5 @@ build/
 *.env
 *.log
 main.spec
+help.txt
+profile_results.prof
