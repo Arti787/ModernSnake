@@ -93,7 +93,8 @@ def _generate_tyamba_colors():
         'snake': lighter,
         'snake_head': accent,
         'snake_head_gradient': pygame.Color(min(accent.r + 30, 255), min(accent.g + 30, 255), min(accent.b, 255)),
-        'snake_tail': pygame.Color(int(base_color.r // 1.5), int(base_color.g // 1.5), int(base_color.b // 1.5)),
+        # Делаем хвост чуть светлее фона, интерполируя к цвету сетки
+        'snake_tail': darker.lerp(base_color, 0.3),
         'food': pygame.Color(min(base_color.r + 100, 255), min(base_color.g, 255), min(base_color.b, 255)),
         'path_visualization': pygame.Color(min(base_color.r + 120, 255), min(base_color.g + 60, 255), min(base_color.b, 255)),
         'text': pygame.Color(220, 220, 220),
@@ -118,7 +119,8 @@ def _generate_sergaris_colors():
         'snake': COLOR_SERGARIS_GRAY,
         'snake_head': COLOR_SERGARIS_BLUE,
         'snake_head_gradient': COLOR_SERGARIS_ORANGE,
-        'snake_tail': COLOR_SERGARIS_DARK,
+        # Делаем хвост темнее сетки, но светлее фона
+        'snake_tail': COLOR_SERGARIS_GRAY.lerp(COLOR_SERGARIS_DARK, 0.7),
         'food': COLOR_SERGARIS_ORANGE,
         'path_visualization': COLOR_SERGARIS_BLUE,
         'text': pygame.Color(220, 220, 220),
@@ -1869,6 +1871,28 @@ def main():
                              snake.speed = min(5000, snake.speed + 5)
                          elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
                              snake.speed = max(1, snake.speed - 5)
+                             
+                         # --- Переключение тем Q/E ---    
+                         if event.key == pygame.K_q or event.key == pygame.K_e:
+                            theme_names = list(THEME_DEFINITIONS.keys())
+                            try:
+                                current_index = theme_names.index(current_theme)
+                                num_themes = len(theme_names)
+                                if event.key == pygame.K_q: # Предыдущая
+                                    new_index = (current_index - 1 + num_themes) % num_themes
+                                else: # Следующая (E)
+                                    new_index = (current_index + 1) % num_themes
+                                
+                                current_theme = theme_names[new_index] # Обновляем переменную в main
+                                set_theme(current_theme)           # Применяем тему глобально
+                                snake._update_caches()             # Обновляем кэши змейки
+                            except ValueError:
+                                # Обработка случая, если current_theme некорректен
+                                print(f"Warning: Current theme '{current_theme}' not found in definitions during switch.")
+                                current_theme = "default" # Сброс на дефолт
+                                set_theme(current_theme)
+                                snake._update_caches()
+                         # ---------------------------
 
                 if not game_running:
                     break
