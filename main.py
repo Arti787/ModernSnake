@@ -1063,11 +1063,11 @@ def button_animation(surface, button, color, text):
         # Затемняем фон
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.set_alpha(int(150 * progress))
-        overlay.fill(COLOR_BACKGROUND)
+        overlay.fill(current_colors['background'])
         surface.blit(overlay, (0,0))
 
         # Рисуем кнопку чуть темнее
-        current_button_color = color.lerp(COLOR_BACKGROUND, 0.3)
+        current_button_color = color.lerp(current_colors['background'], 0.3)
         draw_button(surface, button_rect, current_button_color, text, False, True)
 
         pygame.display.update(button_rect) # Обновляем только область кнопки для производительности
@@ -1086,10 +1086,10 @@ def replay_screen(surface, clock, history: deque, final_score: int, high_score: 
         font_info = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
 
     # Кэшируем текстовые поверхности для статистики
-    final_score_surf = font_info.render(f'Final Score: {final_score}', True, COLOR_TEXT)
-    high_score_surf = font_info.render(f'High Score: {high_score}', True, COLOR_TEXT)
+    final_score_surf = font_info.render(f'Final Score: {final_score}', True, current_colors['text'])
+    high_score_surf = font_info.render(f'High Score: {high_score}', True, current_colors['text'])
 
-    title_surf = font_title.render("Game Replay", True, COLOR_TEXT_HIGHLIGHT)
+    title_surf = font_title.render("Game Replay", True, current_colors['text_highlight'])
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, 40))
 
     history_len = len(history)
@@ -1186,10 +1186,12 @@ def replay_screen(surface, clock, history: deque, final_score: int, high_score: 
         # Получаем состояние (позиции змейки и еды) для текущего индекса перемотки
         current_snake_positions_list, current_food_pos = history[replay_index]
         replay_snake.positions = deque(current_snake_positions_list) # Используем deque для согласованности с Snake.draw
+        # Обновляем positions_set для корректной отрисовки границ
+        replay_snake.positions_set = set(replay_snake.positions)
         replay_food.position = current_food_pos if current_food_pos else (-1, -1) # Скрываем еду, если ее не было в этом состоянии
 
         # --- Отрисовка экрана реплея ---
-        surface.fill(COLOR_BACKGROUND)
+        surface.fill(current_colors['background'])
         draw_grid(surface)
         surface.blit(title_surf, title_rect)
 
@@ -1200,8 +1202,8 @@ def replay_screen(surface, clock, history: deque, final_score: int, high_score: 
 
         # Отрисовка UI (слайдер, кнопки)
         replay_slider.draw(surface)
-        draw_button(surface, retry_button_rect, COLOR_BUTTON, "Retry Game", is_retry_hovered, is_retry_clicked)
-        draw_button(surface, quit_button_rect, COLOR_BUTTON, "Main Menu", is_main_menu_hovered, is_main_menu_clicked)
+        draw_button(surface, retry_button_rect, current_colors['button'], "Retry Game", is_retry_hovered, is_retry_clicked)
+        draw_button(surface, quit_button_rect, current_colors['button'], "Main Menu", is_main_menu_hovered, is_main_menu_clicked)
 
         # Отрисовка финальной статистики
         y_offset = title_rect.bottom + 15
