@@ -1254,6 +1254,7 @@ def replay_screen(surface, clock, history: deque, final_score: int, high_score: 
         current_snake_positions_list, current_food_pos = history[replay_index]
         replay_snake.positions = deque(current_snake_positions_list)
         replay_snake.positions_set = set(replay_snake.positions)
+        replay_snake._update_caches()
         replay_food.position = current_food_pos if current_food_pos else (-1, -1)
 
         surface.fill(current_colors['background'])
@@ -1878,21 +1879,23 @@ def main():
                             try:
                                 current_index = theme_names.index(current_theme)
                                 num_themes = len(theme_names)
-                                if event.key == pygame.K_q: # Предыдущая
+                                if event.key == pygame.K_q:
                                     new_index = (current_index - 1 + num_themes) % num_themes
-                                else: # Следующая (E)
+                                else:
                                     new_index = (current_index + 1) % num_themes
                                 
-                                current_theme = theme_names[new_index] # Обновляем переменную в main
-                                set_theme(current_theme)           # Применяем тему глобально
-                                snake._update_caches()             # Обновляем кэши змейки
+                                current_theme = theme_names[new_index]
+                                set_theme(current_theme)
+                                snake._update_caches()
+                                food.color = current_colors['food']
                             except ValueError:
                                 # Обработка случая, если current_theme некорректен
                                 print(f"Warning: Current theme '{current_theme}' not found in definitions during switch.")
                                 current_theme = "default" # Сброс на дефолт
                                 set_theme(current_theme)
                                 snake._update_caches()
-                         # ---------------------------
+                                food.color = current_colors['food'] # Обновляем цвет еды
+
 
                 if not game_running:
                     break
