@@ -1339,6 +1339,9 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     original_fill_percent = current_fill_percent
     original_show_path = current_show_path
     original_theme = current_theme
+    
+    # Для предотвращения мигания диалога после применения настроек
+    settings_just_applied = False
 
     running = True
     while running:
@@ -1387,7 +1390,55 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                 if back_clicked and is_back_hovered:
                     if eat_sound:
                         eat_sound.play()
-                    running = False
+
+                    # Проверяем, были ли изменены настройки и не были ли они применены
+                    selected_speed = speed_slider.value
+                    selected_volume = volume_slider.value
+                    is_muted = mute_checkbox.checked
+                    selected_fill_percent = fill_slider.value
+                    should_show_path = show_path_checkbox.checked
+                    selected_theme = theme_selector.current_theme_name
+
+                    settings_changed = (
+                        selected_speed != original_speed or
+                        selected_volume != original_volume or
+                        is_muted != original_mute or
+                        selected_fill_percent != original_fill_percent or
+                        should_show_path != original_show_path or
+                        selected_theme != original_theme
+                    )
+
+                    if settings_changed and not settings_just_applied:
+                        # Показываем диалог с предложением сохранить или отменить изменения
+                        dialog_result = unsaved_settings_dialog(surface, clock)
+
+                        if dialog_result == "save":
+                            # Сохраняем изменения как новые оригинальные значения
+                            original_speed = selected_speed
+                            original_volume = selected_volume
+                            original_mute = is_muted
+                            original_fill_percent = selected_fill_percent
+                            original_show_path = should_show_path
+                            original_theme = selected_theme
+
+                            if eat_sound:
+                                eat_sound.set_volume(0 if is_muted else selected_volume / 100)
+
+                            running = False
+                        elif dialog_result == "discard":
+                            # Отменяем изменения и выходим
+                            # Восстанавливаем оригинальную тему перед выходом
+                            set_theme(original_theme)
+                            if eat_sound:
+                                eat_sound.set_volume(0 if original_mute else original_volume / 100)
+                            running = False
+                        # Если dialog_result == "cancel", просто продолжаем настройки
+                    else:
+                        # Восстанавливаем оригинальную тему перед выходом, если не было изменений или только что применили
+                        set_theme(original_theme)
+                        if eat_sound:
+                            eat_sound.set_volume(0 if original_mute else original_volume / 100)
+                        running = False
                 elif apply_clicked and is_apply_hovered:
                     if eat_sound:
                         eat_sound.play()
@@ -1417,6 +1468,9 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     notification_text = "Settings Applied!"
                     notification_timer = pygame.time.get_ticks()
                     notification_alpha = 0
+                    
+                    # Отмечаем, что настройки только что применены
+                    settings_just_applied = True
                         
                 elif reset_clicked and is_reset_hovered:
                     if eat_sound:
@@ -1485,7 +1539,48 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
             
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    # Проверяем, были ли изменены настройки при нажатии ESC
+                    selected_speed = speed_slider.value
+                    selected_volume = volume_slider.value
+                    is_muted = mute_checkbox.checked
+                    selected_fill_percent = fill_slider.value
+                    should_show_path = show_path_checkbox.checked
+                    selected_theme = theme_selector.current_theme_name
+
+                    settings_changed = (
+                        selected_speed != original_speed or
+                        selected_volume != original_volume or
+                        is_muted != original_mute or
+                        selected_fill_percent != original_fill_percent or
+                        should_show_path != original_show_path or
+                        selected_theme != original_theme
+                    )
+
+                    if settings_changed and not settings_just_applied:
+                        dialog_result = unsaved_settings_dialog(surface, clock)
+                        if dialog_result == "save":
+                            original_speed = selected_speed
+                            original_volume = selected_volume
+                            original_mute = is_muted
+                            original_fill_percent = selected_fill_percent
+                            original_show_path = should_show_path
+                            original_theme = selected_theme
+                            if eat_sound:
+                                eat_sound.set_volume(0 if is_muted else selected_volume / 100)
+                            running = False
+                        elif dialog_result == "discard":
+                            # Восстанавливаем оригинальную тему перед выходом
+                            set_theme(original_theme)
+                            if eat_sound:
+                                eat_sound.set_volume(0 if original_mute else original_volume / 100)
+                            running = False
+                        # Если "cancel", ничего не делаем, остаемся в настройках
+                    else:
+                        # Восстанавливаем оригинальную тему перед выходом, если не было изменений или только что применили
+                        set_theme(original_theme)
+                        if eat_sound:
+                            eat_sound.set_volume(0 if original_mute else original_volume / 100)
+                        running = False
 
         selected_speed = speed_slider.value
         selected_volume = volume_slider.value
@@ -2116,6 +2211,140 @@ def main():
 
             pygame.display.update()
             clock.tick(snake.speed)
+
+# Добавляем новую функцию для диалога несохраненных изменений
+def unsaved_settings_dialog(surface, clock):
+    # Создаем затемненный фон
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    overlay.set_alpha(210) # Устанавливаем базовую прозрачность
+    overlay.fill(current_colors['background']) # Используем цвет фона темы
+    # Уменьшаем альфу еще немного для большего затемнения (убедимся, что не станет < 0)
+    current_alpha = overlay.get_alpha() or 255 # Получаем альфу, если None, берем 255
+    overlay.set_alpha(max(0, int(current_alpha * 0.85))) # Уменьшаем и ставим новую, не ниже 0
+
+    surface.blit(overlay, (0, 0))
+
+    # Определяем шрифты
+    try:
+        font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_LARGE, bold=True)
+        # font_text больше не нужен
+    except:
+        font_title = pygame.font.SysFont('arial', FONT_SIZE_LARGE - 2, bold=True)
+        # font_text больше не нужен
+
+    # Заголовок диалога
+    title_surf = font_title.render("Unsaved Changes", True, current_colors['text_white'])
+    # message_surf больше не нужен
+
+    # Определяем размеры диалога (уменьшаем высоту)
+    dialog_width = 500
+    dialog_height = 160 # Уменьшенная высота
+    dialog_rect = pygame.Rect(0, 0, dialog_width, dialog_height)
+    dialog_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+
+    # Размещаем заголовок (ближе к центру по вертикали)
+    title_rect = title_surf.get_rect(center=(dialog_rect.centerx, dialog_rect.top + 40))
+    # message_rect больше не нужен
+
+    # Определяем кнопки (поднимаем выше)
+    button_width = 130
+    button_height = 50
+    button_spacing = 25
+    total_buttons_width = 3 * button_width + 2 * button_spacing
+
+    save_button_rect = pygame.Rect(0, 0, button_width, button_height)
+    discard_button_rect = pygame.Rect(0, 0, button_width, button_height)
+    cancel_button_rect = pygame.Rect(0, 0, button_width, button_height)
+
+    start_x = dialog_rect.centerx - total_buttons_width // 2
+    buttons_y = dialog_rect.bottom - 65 # Подняли кнопки
+    save_button_rect.topleft = (start_x, buttons_y)
+    discard_button_rect.topleft = (save_button_rect.right + button_spacing, buttons_y)
+    cancel_button_rect.topleft = (discard_button_rect.right + button_spacing, buttons_y)
+
+    buttons = {
+        "save": {"rect": save_button_rect, "text": "Save", "color": current_colors['button_hover'], "hovered": False, "clicked": False}, # Цвет "Успех/Применить"
+        "discard": {"rect": discard_button_rect, "text": "Discard", "color": current_colors['gameover'], "hovered": False, "clicked": False}, # Цвет "Предупреждение/Отмена"
+        "cancel": {"rect": cancel_button_rect, "text": "Cancel", "color": current_colors['button'], "hovered": False, "clicked": False} # Стандартный цвет кнопки
+    }
+
+    running = True
+    result = "cancel" # По умолчанию отмена, если просто закрыть окно
+
+    while running:
+        mouse_pos = pygame.mouse.get_pos()
+
+        # Обновляем состояния кнопок
+        for key, data in buttons.items():
+            buttons[key]["hovered"] = data["rect"].collidepoint(mouse_pos)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: # Позволяем закрыть игру из этого диалога
+                if confirmation_dialog(surface, clock, "Quit Game?"):
+                    pygame.quit()
+                    sys.exit()
+                else: # Если отказались выходить, возвращаем на фон
+                    temp_surface = surface.copy()
+                    surface.blit(overlay, (0,0)) # Перерисовываем оверлей
+
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Левая кнопка мыши
+                    for key, data in buttons.items():
+                        if data["hovered"]:
+                            buttons[key]["clicked"] = True
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                clicked_on_button = False
+                for key, data in buttons.items():
+                    if data["clicked"] and data["hovered"]:
+                        if eat_sound: # Используем глобальную переменную eat_sound
+                            eat_sound.play()
+                        result = key
+                        running = False
+                        clicked_on_button = True
+                    buttons[key]["clicked"] = False
+                # Если клик был вне кнопок, можно считать это отменой? Или оставить как есть.
+                # Пока оставляем как есть - нужно кликнуть на кнопку для действия.
+
+            elif event.type == pygame.KEYDOWN:
+                 if event.key == pygame.K_ESCAPE: # Escape из диалога = Cancel
+                      result = "cancel"
+                      running = False
+
+
+        # Рисуем диалоговое окно (на временной поверхности, чтобы не перерисовывать фон каждый раз)
+        temp_surface = surface.copy() # Копируем текущее состояние экрана (с оверлеем)
+        pygame.draw.rect(temp_surface, current_colors['panel_bg'], dialog_rect, border_radius=10) # Используем цвет панели для фона
+        pygame.draw.rect(temp_surface, current_colors['text_highlight'], dialog_rect, width=2, border_radius=10) # Рамка в цвет темы
+
+        temp_surface.blit(title_surf, title_rect)
+        # temp_surface.blit(message_surf, message_rect) # Убрали отрисовку сообщения
+
+        # Рисуем кнопки
+        for key, data in buttons.items():
+            # Передаем правильные цвета в draw_button
+            base_color = data["color"]
+            hover_color = data["color"].lerp(current_colors['background'], 0.2) # Используем логику из draw_button
+            click_color = current_colors['button_click']
+            button_color_to_use = base_color
+            if data["clicked"]:
+                button_color_to_use = click_color
+            elif data["hovered"]:
+                 # Не используем hover_color напрямую, draw_button сама обработает подсветку при hover
+                 pass
+
+            draw_button(temp_surface, data["rect"], base_color, data["text"], data["hovered"], data["clicked"])
+
+        surface.blit(temp_surface, (0,0)) # Отображаем временную поверхность
+
+        pygame.display.update(dialog_rect.inflate(4,4)) # Обновляем только область диалога для производительности
+        clock.tick(60)
+
+    # Восстанавливаем фон перед выходом (важно, чтобы не остался оверлей)
+    # Это будет сделано в вызывающей функции (settings_screen) при перерисовке
+
+    return result
 
 if __name__ == '__main__':
     pygame.init()
