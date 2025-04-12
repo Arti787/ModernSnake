@@ -78,7 +78,7 @@ except pygame.error:
     melody_sound = None
     print(f"Warning: Sound file '{melody_sound_path}' not found or cannot be loaded.")
 
-SURVIVAL_MODE_DURATION = 100 # Количество шагов в режиме выживания
+SURVIVAL_MODE_DURATION = 100
 
 # --- Централизованное определение тем ---
 def _generate_tyamba_colors():
@@ -204,7 +204,7 @@ def draw_button(surface, button, base_color, text, is_hovered, is_clicked):
     if is_clicked:
         button_color = current_colors['button_click']
     elif is_hovered:
-        button_color = base_color.lerp(current_colors['background'], 0.2) # Смешиваем с цветом фона
+        button_color = base_color.lerp(current_colors['background'], 0.2)
 
 
     button_rect = pygame.Rect(button)
@@ -325,7 +325,7 @@ class Checkbox:
         self.checked = initial
         self.label = label
         self.label_rect = None
-        self.clicked = False  # Флаг для отслеживания нажатия
+        self.clicked = False
         try:
             self.font = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         except:
@@ -333,8 +333,7 @@ class Checkbox:
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # Проверяем, что это именно кнопка мыши, а не колесико
-            if event.button in [1, 2, 3]:  # Левая, средняя или правая кнопка мыши
+            if event.button in [1, 2, 3]:
                 checkbox_clicked = self.rect.collidepoint(event.pos)
                 label_clicked = self.label_rect and self.label_rect.collidepoint(event.pos)
                 if checkbox_clicked or label_clicked:
@@ -357,7 +356,7 @@ class Checkbox:
         label_rect = label_surf.get_rect()
         label_rect.left = self.rect.right + 10
         label_rect.centery = self.rect.centery + 3
-        self.label_rect = label_rect # Сохраняем Rect метки
+        self.label_rect = label_rect
         surface.blit(label_surf, label_rect)
 
 class ThemeSelector:
@@ -407,7 +406,6 @@ class ThemeSelector:
             
             preview.fill(theme_palette['background'])
             
-            # Рисуем 4 цветных квадратика для отображения основных цветов
             sq_size = self.preview_size // 2
             pygame.draw.rect(preview, theme_palette['snake_head'], (0, 0, sq_size, sq_size))
             pygame.draw.rect(preview, theme_palette['snake'], (sq_size, 0, sq_size, sq_size))
@@ -666,7 +664,6 @@ class Snake:
             body_color = current_colors['snake']
             tail_color = current_colors['snake_tail']
             
-            # Кэшируем цвета для всех возможных сегментов
             for i in range(1, num_segments):
                 progress = (i - 1) / (num_segments - 1) if num_segments > 1 else 0
                 segment_color = pygame.Color(0, 0, 0)
@@ -695,7 +692,7 @@ class Snake:
             if i < num_segments - 1:
                 next_pos = self.positions[i+1]
                 neighbors.add(next_pos)
-            if neighbors: # Добавляем в кэш только если есть соседи
+            if neighbors:
                 self._neighboring_segments_cache[pos] = neighbors
                 
     def _update_caches(self):
@@ -728,9 +725,8 @@ class Snake:
             neighbor_right = ((x + 1) % GRID_WIDTH, y)
             neighbor_down = (x, (y + 1) % GRID_HEIGHT)
             
-            neighbors = self._neighboring_segments_cache.get(current_pos, set()) # Используем кэш
+            neighbors = self._neighboring_segments_cache.get(current_pos, set())
             
-            # Проверяем правого соседа
             if (neighbor_right in self.positions_set and 
                 neighbor_right not in neighbors):
                 pygame.draw.line(surface, internal_border_color,
@@ -738,7 +734,6 @@ class Snake:
                                 (x_px + GRIDSIZE - line_width, y_px + GRIDSIZE - 1),
                                 line_width)
             
-            # Проверяем нижнего соседа
             if (neighbor_down in self.positions_set and 
                 neighbor_down not in neighbors):
                 pygame.draw.line(surface, internal_border_color,
@@ -764,7 +759,7 @@ class Snake:
         if self.mode == 'auto':
             collision = self.auto_move(food_pos)
         else:
-            collision = self.manual_move() # Ручной ход не меняется
+            collision = self.manual_move()
 
         if self.positions:
              self.history.append((list(self.positions), self.current_food_pos))
@@ -773,7 +768,7 @@ class Snake:
 
     def manual_move(self):
         """Движение вперед в ручном режиме на основе self.next_direction."""
-        self.direction = self.next_direction # Обновляем текущее направление
+        self.direction = self.next_direction
         cur = self.get_head_position()
         x, y = self.direction
         new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
@@ -891,7 +886,6 @@ class Snake:
 
         self.history.append((history_positions, history_food_pos))
         
-        # Обновляем кэши, ТОЛЬКО если структура змейки изменилась
         if structure_changed:
             self._update_caches()
 
@@ -1061,7 +1055,7 @@ class Snake:
             else:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
 
-        self._update_caches() # Обновляем кэши при ресете
+        self._update_caches()
 
 class Food:
     def __init__(self):
@@ -1325,14 +1319,12 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     apply_clicked = False
     back_clicked = False
     
-    # Всплывающее уведомление
     notification_active = False
     notification_text = ""
     notification_timer = 0
-    notification_duration = 2000  # 2 секунды
+    notification_duration = 2000
     notification_alpha = 0
 
-    # Сохраняем исходные значения для возможности отмены
     original_speed = current_speed
     original_volume = current_volume
     original_mute = mute
@@ -1340,7 +1332,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     original_show_path = current_show_path
     original_theme = current_theme
     
-    # Для предотвращения мигания диалога после применения настроек
     settings_just_applied = False
 
     running = True
@@ -1375,8 +1366,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     sys.exit()
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                # Проверяем, что это именно кнопка мыши, а не колесико
-                if event.button in [1, 2, 3]:  # Левая, средняя или правая кнопка мыши
+                if event.button in [1, 2, 3]:
                     if scrollbar_handle_rect.height > 0 and scrollbar_handle_rect.collidepoint(mouse_pos):
                         dragging_scrollbar = True
                         drag_start_y = mouse_pos[1]
@@ -1391,7 +1381,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     if eat_sound:
                         eat_sound.play()
 
-                    # Проверяем, были ли изменены настройки и не были ли они применены
                     selected_speed = speed_slider.value
                     selected_volume = volume_slider.value
                     is_muted = mute_checkbox.checked
@@ -1409,11 +1398,9 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     )
 
                     if settings_changed and not settings_just_applied:
-                        # Показываем диалог с предложением сохранить или отменить изменения
                         dialog_result = unsaved_settings_dialog(surface, clock)
 
                         if dialog_result == "save":
-                            # Сохраняем изменения как новые оригинальные значения
                             original_speed = selected_speed
                             original_volume = selected_volume
                             original_mute = is_muted
@@ -1426,15 +1413,11 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
 
                             running = False
                         elif dialog_result == "discard":
-                            # Отменяем изменения и выходим
-                            # Восстанавливаем оригинальную тему перед выходом
                             set_theme(original_theme)
                             if eat_sound:
                                 eat_sound.set_volume(0 if original_mute else original_volume / 100)
                             running = False
-                        # Если dialog_result == "cancel", просто продолжаем настройки
                     else:
-                        # Восстанавливаем оригинальную тему перед выходом, если не было изменений или только что применили
                         set_theme(original_theme)
                         if eat_sound:
                             eat_sound.set_volume(0 if original_mute else original_volume / 100)
@@ -1443,7 +1426,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     if eat_sound:
                         eat_sound.play()
                     
-                    # Применяем настройки и сохраняем как новые оригинальные значения
                     current_speed = speed_slider.value
                     current_volume = volume_slider.value
                     mute = mute_checkbox.checked
@@ -1451,7 +1433,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     current_show_path = show_path_checkbox.checked
                     current_theme = theme_selector.current_theme_name
                     
-                    # Обновляем "оригинальные" значения
                     original_speed = current_speed
                     original_volume = current_volume
                     original_mute = mute
@@ -1459,17 +1440,14 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     original_show_path = current_show_path
                     original_theme = current_theme
                     
-                    # Применяем звук
                     if eat_sound:
                         eat_sound.set_volume(0 if mute else current_volume / 100)
                         
-                    # Активируем уведомление
                     notification_active = True
                     notification_text = "Settings Applied!"
                     notification_timer = pygame.time.get_ticks()
                     notification_alpha = 0
                     
-                    # Отмечаем, что настройки только что применены
                     settings_just_applied = True
                         
                 elif reset_clicked and is_reset_hovered:
@@ -1533,13 +1511,10 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
             mute_checkbox.handle_event(adjusted_event)
             show_path_checkbox.handle_event(adjusted_event)
             
-            # Для theme_selector используем handle_event без изменений - он обработает правильно,
-            # т.к. мы модифицировали event для него с учетом прокрутки
             theme_selector.handle_event(adjusted_event)
             
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    # Проверяем, были ли изменены настройки при нажатии ESC
                     selected_speed = speed_slider.value
                     selected_volume = volume_slider.value
                     is_muted = mute_checkbox.checked
@@ -1569,14 +1544,11 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                                 eat_sound.set_volume(0 if is_muted else selected_volume / 100)
                             running = False
                         elif dialog_result == "discard":
-                            # Восстанавливаем оригинальную тему перед выходом
                             set_theme(original_theme)
                             if eat_sound:
                                 eat_sound.set_volume(0 if original_mute else original_volume / 100)
                             running = False
-                        # Если "cancel", ничего не делаем, остаемся в настройках
                     else:
-                        # Восстанавливаем оригинальную тему перед выходом, если не было изменений или только что применили
                         set_theme(original_theme)
                         if eat_sound:
                             eat_sound.set_volume(0 if original_mute else original_volume / 100)
@@ -1589,7 +1561,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         should_show_path = show_path_checkbox.checked
         selected_theme = theme_selector.current_theme_name
         
-        # Временно применяем звук для предпросмотра изменений
         if eat_sound:
             eat_sound.set_volume(0 if is_muted else selected_volume / 100)
 
@@ -1635,7 +1606,6 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         
         original_theme_rect = theme_selector.rect.copy()
         theme_selector.rect.topleft = (widget_x, y_pos_draw)
-        # Передаем правильную позицию мыши с учетом прокрутки для определения подсветки при наведении
         theme_selector.draw(content_surface, scroll_y=int(scroll_y), mouse_pos=scroll_mouse_pos)
         theme_selector.rect = original_theme_rect
         y_pos_draw += theme_selector.total_height + 40
@@ -1989,7 +1959,7 @@ def main():
         set_theme(current_theme)
 
         initial_current_speed = current_speed
-        min_speed = 5  # Минимальная скорость игры
+        min_speed = 5
 
         if eat_sound:
             eat_sound.set_volume(0 if mute else current_volume / 100)
@@ -2042,13 +2012,10 @@ def main():
                         snake.speed = int(game_speed_slider.value)
                         panel_interaction = True
 
-                # Обработка клавиатурного ввода ВСЕГДА, даже при наведении на ползунок
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # ESC - выход в главное меню
                         game_running = False
                     
-                    # Управление змейкой
                     if snake.mode == 'manual':
                         if event.key == pygame.K_UP: snake.turn(UP)
                         elif event.key == pygame.K_DOWN: snake.turn(DOWN)
@@ -2059,7 +2026,6 @@ def main():
                         elif event.key == pygame.K_a: snake.turn(LEFT)
                         elif event.key == pygame.K_d: snake.turn(RIGHT)
                     
-                    # Обрабатываем нажатие клавиш скорости игры
                     if event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
                         snake.speed = min(5000, snake.speed + 10)
                         game_speed_slider.value = snake.speed
@@ -2069,11 +2035,10 @@ def main():
                         game_speed_slider.value = snake.speed
                         game_speed_slider.update_handle_pos()
                     
-                    # Пауза по кнопке P или пробел
                     if event.key == pygame.K_p or event.key == pygame.K_SPACE:
                         pause_screen(screen, clock)
                     
-                    # Обрабатываем изменение темы по Q/E
+
                     if event.key == pygame.K_q or event.key == pygame.K_e:
                         try:
                             theme_names = list(THEME_DEFINITIONS.keys())
@@ -2082,7 +2047,7 @@ def main():
                             
                             if event.key == pygame.K_q:
                                 new_index = (current_index - 1 + num_themes) % num_themes
-                            else: # event.key == pygame.K_e
+                            else:
                                 new_index = (current_index + 1) % num_themes
                             
                             current_theme = theme_names[new_index]
@@ -2090,12 +2055,11 @@ def main():
                             snake._update_caches()
                             food.color = current_colors['food']
                         except ValueError:
-                            # Обработка случая, если current_theme некорректен
                             print(f"Warning: Current theme '{current_theme}' not found in definitions during switch.")
-                            current_theme = "default" # Сброс на дефолт
+                            current_theme = "default"
                             set_theme(current_theme)
                             snake._update_caches()
-                            food.color = current_colors['food'] # Обновляем цвет еды
+                            food.color = current_colors['food']
 
 
                 if not game_running:
@@ -2212,41 +2176,29 @@ def main():
             pygame.display.update()
             clock.tick(snake.speed)
 
-# Добавляем новую функцию для диалога несохраненных изменений
 def unsaved_settings_dialog(surface, clock):
-    # Создаем затемненный фон
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    overlay.set_alpha(210) # Устанавливаем базовую прозрачность
-    overlay.fill(current_colors['background']) # Используем цвет фона темы
-    # Уменьшаем альфу еще немного для большего затемнения (убедимся, что не станет < 0)
-    current_alpha = overlay.get_alpha() or 255 # Получаем альфу, если None, берем 255
-    overlay.set_alpha(max(0, int(current_alpha * 0.85))) # Уменьшаем и ставим новую, не ниже 0
+    overlay.set_alpha(210)
+    overlay.fill(current_colors['background'])
+    current_alpha = overlay.get_alpha() or 255
+    overlay.set_alpha(max(0, int(current_alpha * 0.85)))
 
     surface.blit(overlay, (0, 0))
 
-    # Определяем шрифты
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_LARGE, bold=True)
-        # font_text больше не нужен
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_LARGE - 2, bold=True)
-        # font_text больше не нужен
 
-    # Заголовок диалога
     title_surf = font_title.render("Unsaved Changes", True, current_colors['text_white'])
-    # message_surf больше не нужен
 
-    # Определяем размеры диалога (уменьшаем высоту)
     dialog_width = 500
-    dialog_height = 160 # Уменьшенная высота
+    dialog_height = 160
     dialog_rect = pygame.Rect(0, 0, dialog_width, dialog_height)
     dialog_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
-    # Размещаем заголовок (ближе к центру по вертикали)
     title_rect = title_surf.get_rect(center=(dialog_rect.centerx, dialog_rect.top + 40))
-    # message_rect больше не нужен
 
-    # Определяем кнопки (поднимаем выше)
     button_width = 130
     button_height = 50
     button_spacing = 25
@@ -2257,7 +2209,7 @@ def unsaved_settings_dialog(surface, clock):
     cancel_button_rect = pygame.Rect(0, 0, button_width, button_height)
 
     start_x = dialog_rect.centerx - total_buttons_width // 2
-    buttons_y = dialog_rect.bottom - 65 # Подняли кнопки
+    buttons_y = dialog_rect.bottom - 65
     save_button_rect.topleft = (start_x, buttons_y)
     discard_button_rect.topleft = (save_button_rect.right + button_spacing, buttons_y)
     cancel_button_rect.topleft = (discard_button_rect.right + button_spacing, buttons_y)
@@ -2269,23 +2221,22 @@ def unsaved_settings_dialog(surface, clock):
     }
 
     running = True
-    result = "cancel" # По умолчанию отмена, если просто закрыть окно
+    result = "cancel"
 
     while running:
         mouse_pos = pygame.mouse.get_pos()
 
-        # Обновляем состояния кнопок
         for key, data in buttons.items():
             buttons[key]["hovered"] = data["rect"].collidepoint(mouse_pos)
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: # Позволяем закрыть игру из этого диалога
+            if event.type == pygame.QUIT:
                 if confirmation_dialog(surface, clock, "Quit Game?"):
                     pygame.quit()
                     sys.exit()
-                else: # Если отказались выходить, возвращаем на фон
+                else:
                     temp_surface = surface.copy()
-                    surface.blit(overlay, (0,0)) # Перерисовываем оверлей
+                    surface.blit(overlay, (0,0))
 
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -2298,51 +2249,39 @@ def unsaved_settings_dialog(surface, clock):
                 clicked_on_button = False
                 for key, data in buttons.items():
                     if data["clicked"] and data["hovered"]:
-                        if eat_sound: # Используем глобальную переменную eat_sound
+                        if eat_sound:
                             eat_sound.play()
                         result = key
                         running = False
                         clicked_on_button = True
                     buttons[key]["clicked"] = False
-                # Если клик был вне кнопок, можно считать это отменой? Или оставить как есть.
-                # Пока оставляем как есть - нужно кликнуть на кнопку для действия.
 
             elif event.type == pygame.KEYDOWN:
-                 if event.key == pygame.K_ESCAPE: # Escape из диалога = Cancel
+                 if event.key == pygame.K_ESCAPE:
                       result = "cancel"
                       running = False
 
-
-        # Рисуем диалоговое окно (на временной поверхности, чтобы не перерисовывать фон каждый раз)
-        temp_surface = surface.copy() # Копируем текущее состояние экрана (с оверлеем)
-        pygame.draw.rect(temp_surface, current_colors['panel_bg'], dialog_rect, border_radius=10) # Используем цвет панели для фона
-        pygame.draw.rect(temp_surface, current_colors['text_highlight'], dialog_rect, width=2, border_radius=10) # Рамка в цвет темы
+        temp_surface = surface.copy()
+        pygame.draw.rect(temp_surface, current_colors['panel_bg'], dialog_rect, border_radius=10)
+        pygame.draw.rect(temp_surface, current_colors['text_highlight'], dialog_rect, width=2, border_radius=10)
 
         temp_surface.blit(title_surf, title_rect)
-        # temp_surface.blit(message_surf, message_rect) # Убрали отрисовку сообщения
-
-        # Рисуем кнопки
         for key, data in buttons.items():
-            # Передаем правильные цвета в draw_button
             base_color = data["color"]
-            hover_color = data["color"].lerp(current_colors['background'], 0.2) # Используем логику из draw_button
+            hover_color = data["color"].lerp(current_colors['background'], 0.2)
             click_color = current_colors['button_click']
             button_color_to_use = base_color
             if data["clicked"]:
                 button_color_to_use = click_color
             elif data["hovered"]:
-                 # Не используем hover_color напрямую, draw_button сама обработает подсветку при hover
                  pass
 
             draw_button(temp_surface, data["rect"], base_color, data["text"], data["hovered"], data["clicked"])
 
-        surface.blit(temp_surface, (0,0)) # Отображаем временную поверхность
+        surface.blit(temp_surface, (0,0))
 
-        pygame.display.update(dialog_rect.inflate(4,4)) # Обновляем только область диалога для производительности
+        pygame.display.update(dialog_rect.inflate(4,4))
         clock.tick(60)
-
-    # Восстанавливаем фон перед выходом (важно, чтобы не остался оверлей)
-    # Это будет сделано в вызывающей функции (settings_screen) при перерисовке
 
     return result
 
