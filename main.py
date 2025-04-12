@@ -7,8 +7,32 @@ from collections import deque
 from typing import List, Tuple, Set, Deque, Dict, Optional, Any, Union, TypedDict
 import itertools
 import heapq
+import time # Import time for performance counter
 from pygame import Surface
 from pygame.font import Font
+
+# --- Класс для значений с временными метками для статистики ---
+class TimestampedValue:
+    def __init__(self, value: float, timestamp: Optional[float] = None):
+        self.value = value
+        self.timestamp = time.time() if timestamp is None else timestamp
+
+    def __lt__(self, other):
+        return self.value < other.value if isinstance(other, TimestampedValue) else self.value < other
+
+    def __gt__(self, other):
+        return self.value > other.value if isinstance(other, TimestampedValue) else self.value > other
+
+    def __eq__(self, other):
+        return self.value == other.value if isinstance(other, TimestampedValue) else self.value == other
+
+    def __float__(self):
+        return float(self.value)
+
+def get_values_in_timespan(history: Deque[TimestampedValue], seconds: float = 5.0) -> List[float]:
+    """Get only values from the last N seconds."""
+    now = time.time()
+    return [item.value for item in history if now - item.timestamp <= seconds]
 
 pygame.init()
 pygame.mixer.init()
@@ -1053,7 +1077,7 @@ class Snake:
                 self.next_direction = generated_direction
                 self.positions_set = set(self.positions)
             else:
-                 print(f"Warning: Failed to generate snake for {initial_fill_percentage}% on reset, starting with default.")
+                 print(f"Warning: Failed to generate snake for {initial_fill_percentage}%, starting with default.")
 
         self._update_caches()
 
@@ -1253,28 +1277,31 @@ def replay_screen(surface, clock, history: deque):
         draw_button(surface, quit_button_rect, current_colors['button'], "Main Menu", is_main_menu_hovered, is_main_menu_clicked)
 
         pygame.display.update()
-        clock.tick(60)
+        clock.tick(60) # Высокий FPS для экрана повтора чтобы UI был отзывчивым
 
 def game_over_screen(surface, clock, snake_length, current_speed, history: deque):
     """Экран Game Over теперь просто вызывает replay_screen."""
     return replay_screen(surface, clock, history)
 
-def settings_screen(surface, clock, current_speed, current_volume, mute, current_fill_percent, current_show_path, current_theme="default") -> Tuple[int, int, bool, int, bool, str]:
+def settings_screen(surface, clock, current_speed, current_volume, mute, current_fill_percent, current_show_path, current_theme="default", current_max_fps=60) -> Tuple[int, int, bool, int, bool, str, int]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
         font_title = pygame.font.SysFont('arial', FONT_SIZE_XLARGE - 4, bold=True)
 
     title_surf = font_title.render("Settings", True, current_colors['text_white'])
-    title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 220))
+    title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, 60))
 
     slider_width = 350
     slider_height = 25
     checkbox_size = 25
     widget_x = SCREEN_WIDTH // 2 - slider_width // 2
-    y_pos = SCREEN_HEIGHT // 2 - 150
+    y_pos = title_rect.bottom + 50
 
-    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed", power=2.5)
+    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed (LPS)", power=2.5)
+    y_pos += 70
+
+    max_fps_slider = Slider(widget_x, y_pos, slider_width, slider_height, 30, 120, current_max_fps, "Max Render FPS")
     y_pos += 70
 
     volume_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
@@ -1285,11 +1312,11 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
 
     mute_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Mute Sound", mute)
     y_pos += 45
+
     show_path_checkbox = Checkbox(widget_x, y_pos, checkbox_size, "Show AI Path", current_show_path)
-    
-    y_pos += 60
+    y_pos += 45
+
     theme_selector = ThemeSelector(widget_x, y_pos, slider_width, current_theme_name=current_theme)
-    
     y_pos += theme_selector.total_height + 40
 
     button_width = 120
@@ -1331,6 +1358,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     original_fill_percent = current_fill_percent
     original_show_path = current_show_path
     original_theme = current_theme
+    original_max_fps = current_max_fps
     
     settings_just_applied = False
 
@@ -1387,6 +1415,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     selected_fill_percent = fill_slider.value
                     should_show_path = show_path_checkbox.checked
                     selected_theme = theme_selector.current_theme_name
+                    selected_max_fps = max_fps_slider.value
 
                     settings_changed = (
                         selected_speed != original_speed or
@@ -1394,7 +1423,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                         is_muted != original_mute or
                         selected_fill_percent != original_fill_percent or
                         should_show_path != original_show_path or
-                        selected_theme != original_theme
+                        selected_theme != original_theme or
+                        selected_max_fps != original_max_fps
                     )
 
                     if settings_changed and not settings_just_applied:
@@ -1407,6 +1437,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                             original_fill_percent = selected_fill_percent
                             original_show_path = should_show_path
                             original_theme = selected_theme
+                            original_max_fps = selected_max_fps
 
                             if eat_sound:
                                 eat_sound.set_volume(0 if is_muted else selected_volume / 100)
@@ -1432,6 +1463,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     current_fill_percent = fill_slider.value
                     current_show_path = show_path_checkbox.checked
                     current_theme = theme_selector.current_theme_name
+                    current_max_fps = max_fps_slider.value
                     
                     original_speed = current_speed
                     original_volume = current_volume
@@ -1439,6 +1471,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     original_fill_percent = current_fill_percent
                     original_show_path = current_show_path
                     original_theme = current_theme
+                    original_max_fps = current_max_fps
                     
                     if eat_sound:
                         eat_sound.set_volume(0 if mute else current_volume / 100)
@@ -1459,6 +1492,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     selected_fill_percent = 0
                     should_show_path = False
                     selected_theme = "default"
+                    selected_max_fps = 60
                     
                     theme_selector.current_theme_name = selected_theme
                     for i, theme in enumerate(theme_selector.themes):
@@ -1477,6 +1511,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     fill_slider.update_handle_pos()
                     mute_checkbox.checked = is_muted
                     show_path_checkbox.checked = should_show_path
+                    max_fps_slider.value = selected_max_fps
+                    max_fps_slider.update_handle_pos()
                     
                     if eat_sound:
                         eat_sound.set_volume(0 if is_muted else selected_volume / 100)
@@ -1510,7 +1546,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
             fill_slider.handle_event(adjusted_event)
             mute_checkbox.handle_event(adjusted_event)
             show_path_checkbox.handle_event(adjusted_event)
-            
+            max_fps_slider.handle_event(adjusted_event)
+
             theme_selector.handle_event(adjusted_event)
             
             if event.type == pygame.KEYDOWN:
@@ -1521,6 +1558,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                     selected_fill_percent = fill_slider.value
                     should_show_path = show_path_checkbox.checked
                     selected_theme = theme_selector.current_theme_name
+                    selected_max_fps = max_fps_slider.value
 
                     settings_changed = (
                         selected_speed != original_speed or
@@ -1528,7 +1566,8 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                         is_muted != original_mute or
                         selected_fill_percent != original_fill_percent or
                         should_show_path != original_show_path or
-                        selected_theme != original_theme
+                        selected_theme != original_theme or
+                        selected_max_fps != original_max_fps
                     )
 
                     if settings_changed and not settings_just_applied:
@@ -1540,6 +1579,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                             original_fill_percent = selected_fill_percent
                             original_show_path = should_show_path
                             original_theme = selected_theme
+                            original_max_fps = selected_max_fps
                             if eat_sound:
                                 eat_sound.set_volume(0 if is_muted else selected_volume / 100)
                             running = False
@@ -1560,6 +1600,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         selected_fill_percent = fill_slider.value
         should_show_path = show_path_checkbox.checked
         selected_theme = theme_selector.current_theme_name
+        selected_max_fps = max_fps_slider.value
         
         if eat_sound:
             eat_sound.set_volume(0 if is_muted else selected_volume / 100)
@@ -1572,12 +1613,18 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         title_rect_onscreen = title_surf.get_rect(center=(SCREEN_WIDTH // 2, 60))
         surface.blit(title_surf, title_rect_onscreen)
         
-        y_pos_draw = 150
+        y_pos_draw = title_rect_onscreen.bottom + 50
         
         original_speed_rect = speed_slider.rect.copy()
         speed_slider.rect.topleft = (widget_x, y_pos_draw)
         speed_slider.draw(content_surface)
         speed_slider.rect = original_speed_rect
+        y_pos_draw += 70
+        
+        original_max_fps_rect = max_fps_slider.rect.copy()
+        max_fps_slider.rect.topleft = (widget_x, y_pos_draw)
+        max_fps_slider.draw(content_surface)
+        max_fps_slider.rect = original_max_fps_rect
         y_pos_draw += 70
         
         original_volume_rect = volume_slider.rect.copy()
@@ -1602,7 +1649,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
         show_path_checkbox.rect.topleft = (widget_x, y_pos_draw)
         show_path_checkbox.draw(content_surface)
         show_path_checkbox.rect = original_show_path_rect
-        y_pos_draw += 60
+        y_pos_draw += 45
         
         original_theme_rect = theme_selector.rect.copy()
         theme_selector.rect.topleft = (widget_x, y_pos_draw)
@@ -1669,11 +1716,11 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
                 notification_active = False
 
         pygame.display.update()
-        clock.tick(60)
+        clock.tick(current_max_fps)
 
-    return original_speed, original_volume, original_mute, original_fill_percent, original_show_path, original_theme
+    return original_speed, original_volume, original_mute, original_fill_percent, original_show_path, original_theme, original_max_fps
 
-def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, initial_fill_percent, initial_show_path, initial_theme="default") -> Tuple[str, int, int, bool, int, bool, str]:
+def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, initial_fill_percent, initial_show_path, initial_theme="default", initial_max_fps=60) -> Tuple[str, int, int, bool, int, bool, str, int]:
     try:
         font_title = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_XLARGE, bold=True)
     except:
@@ -1715,6 +1762,7 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
     current_fill_percent = initial_fill_percent
     show_path_visualization = initial_show_path
     current_theme = initial_theme
+    current_max_fps = initial_max_fps
     set_theme(current_theme)
     waiting = True
 
@@ -1740,12 +1788,12 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
                             eat_sound.play()
 
                         if key == 'manual':
-                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme
+                            return 'manual', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme, int(current_max_fps)
                         elif key == 'auto':
-                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme
+                            return 'auto', int(current_speed), int(current_volume), mute, current_fill_percent, show_path_visualization, current_theme, int(current_max_fps)
                         elif key == 'settings':
-                            current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme = settings_screen(
-                                surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme
+                            current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme, current_max_fps = settings_screen(
+                                surface, clock, current_speed, current_volume, mute, current_fill_percent, show_path_visualization, current_theme, current_max_fps
                             )
                             if eat_sound:
                                 eat_sound.set_volume(0 if mute else current_volume / 100)
@@ -1767,8 +1815,8 @@ def start_screen(surface, clock, initial_speed, initial_volume, initial_mute, in
             draw_button(surface, data['rect'], data['color'], data['text'], hover_states[key], click_states[key])
 
         pygame.display.update()
-        clock.tick(60)
-    return 'manual', 15, 1, False, 0, False, "default"
+        clock.tick(current_max_fps)
+    return 'manual', 15, 1, False, 0, False, "default", 60
 
 def pause_screen(surface, clock):
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -1804,7 +1852,8 @@ def pause_screen(surface, clock):
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_p or event.key == pygame.K_SPACE:
                     paused = False
-        clock.tick(15)
+        
+        clock.tick(60) # Высокий FPS для меню паузы чтобы UI был отзывчивым
 
 def confirmation_dialog(surface, clock, question) -> bool:
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -1873,7 +1922,7 @@ def confirmation_dialog(surface, clock, question) -> bool:
         surface.blit(temp_surface, (0,0))
 
         pygame.display.update()
-        clock.tick(60)
+        clock.tick(60) # Высокий FPS для диалогов чтобы UI был отзывчивым
 
 def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[int, int]:
     """Вычисляет вектор (dx, dy) от pos1 к pos2, учитывая зацикленность поля."""
@@ -1894,19 +1943,55 @@ def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[
 
     return dx, dy
 
-# --- Функция для отрисовки графика FPS ---
-def draw_fps_graph(surface: Surface, history: Deque[float], x: int, y: int, width: int, height: int, color: pygame.Color):
-    """Рисует простой линейный график на основе истории значений."""
+# --- Функция для отрисовки графика LPS (бывший FPS) ---
+def draw_lps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color):
+    """Рисует простой линейный график на основе истории значений (LPS)."""
+    if not history:
+        return
+    history_len = len(history)
+    max_lps_hist = 1.0 # Renamed variable
+    if history_len > 0:
+        # Фильтруем только последние 5 секунд для графика
+        recent_values = get_values_in_timespan(history, 5.0)
+        if recent_values:
+            max_lps_hist = max(10.0, max(recent_values)) # Ensure minimum scale, renamed variable
+    # Dynamic scaling based on logic speed, not fixed 60fps
+    dynamic_max_y = max(30.0, max_lps_hist * 1.1) # Adjusted minimum and variable name
+
+    points = []
+    for i, item in enumerate(history):
+        lps = item.value # Actual LPS value
+        # Normalize based on dynamic_max_y for logic speed
+        normalized_y = 1.0 - max(0.0, min(1.0, lps / dynamic_max_y if dynamic_max_y > 1e-6 else 0.0))
+        point_x = x + int((i / (history_len - 1 if history_len > 1 else 1)) * width)
+        point_y = y + int(normalized_y * height)
+        points.append((point_x, point_y))
+
+    if len(points) >= 2:
+        pygame.draw.lines(surface, color, False, points, 1)
+    elif len(points) == 1:
+        pygame.draw.circle(surface, color, points[0], 2)
+
+# --- Функция для отрисовки графика FPS (аналогично LPS) ---
+def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color, target_fps: float):
+    """Рисует простой линейный график для FPS."""
     if not history:
         return
     history_len = len(history)
     max_fps_hist = 1.0
     if history_len > 0:
-        max_fps_hist = max(history)
-    dynamic_max_y = max(60.0, max_fps_hist * 1.1)
- 
+        # Фильтруем только последние 5 секунд для графика
+        recent_values = get_values_in_timespan(history, 5.0)
+        if recent_values:
+            # Scale based on target FPS and actual recent history max
+            max_fps_hist = max(target_fps * 1.1, max(recent_values) * 1.1)
+    # Ensure a minimum sensible scale
+    dynamic_max_y = max(30.0, max_fps_hist)
+
     points = []
-    for i, fps in enumerate(history):
+    for i, item in enumerate(history):
+        fps = item.value
+        # Normalize based on dynamic_max_y for FPS values
         normalized_y = 1.0 - max(0.0, min(1.0, fps / dynamic_max_y if dynamic_max_y > 1e-6 else 0.0))
         point_x = x + int((i / (history_len - 1 if history_len > 1 else 1)) * width)
         point_y = y + int(normalized_y * height)
@@ -1917,30 +2002,67 @@ def draw_fps_graph(surface: Surface, history: Deque[float], x: int, y: int, widt
     elif len(points) == 1:
         pygame.draw.circle(surface, color, points[0], 2)
 
+MAX_LOGIC_STEPS_PER_FRAME = 100 # Limit logic steps per render frame to prevent freezes
+LPS_CALC_INTERVAL = 0.5 # Calculate actual LPS every 0.5 seconds
+MAX_LOGIC_TIME_PERCENT_PER_FRAME = 0.85 # Max % of frame time for logic
+STATS_DISPLAY_SECONDS = 5.0 # Display stats for the last 5 seconds
+
 def main():
     pygame.display.set_caption('Modern Snake Game')
-    clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    clock = pygame.time.Clock()
+    eat_sound = None
+    melody_sound = None # Initialize melody_sound
 
+    # --- Font Initialization ---
     try:
         font_icon = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         font_panel = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_SMALL)
         font_tiny = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_TINY)
-    except:
-        font_icon = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
-        font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
-        font_tiny = pygame.font.SysFont('arial', FONT_SIZE_TINY - 1)
+    except Exception as e:
+        print(f"Primary font ('{FONT_NAME_PRIMARY}') not found, using fallback 'arial'. Error: {e}")
+        try:
+            font_icon = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
+            font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
+            font_tiny = pygame.font.SysFont('arial', FONT_SIZE_TINY - 1)
+        except Exception as fallback_e:
+            print(f"Fallback font 'arial' also not found. Text rendering might fail. Error: {fallback_e}")
+            # As a last resort, use Pygame's default font
+            font_icon = pygame.font.Font(None, FONT_SIZE_MEDIUM)
+            font_panel = pygame.font.Font(None, FONT_SIZE_SMALL)
+            font_tiny = pygame.font.Font(None, FONT_SIZE_TINY)
+
+    # --- Sound Initialization ---
+    try:
+        pygame.mixer.init()
+        sound_file_path = os.path.join(script_dir, 'eat.wav') # Use script_dir
+        eat_sound = pygame.mixer.Sound(sound_file_path)
+        eat_sound.set_volume(0.05)
+    except Exception as e:
+        print(f"Could not load eat sound ('{sound_file_path}'): {e}")
+        eat_sound = None
+
+    try:
+        melody_sound_path = os.path.join(script_dir, 'melody.wav') # Use script_dir
+        melody_sound = pygame.mixer.Sound(melody_sound_path)
+        melody_sound.set_volume(0.1)
+    except Exception as e:
+        print(f"Could not load melody sound ('{melody_sound_path}'): {e}")
+        melody_sound = None
 
     current_speed = 15
-    current_volume = 1
+    current_volume = 50
     mute = False
     current_fill_percent = 0
     show_path_visualization = False
     current_theme = "default"
-    fps_history: Deque[float] = deque(maxlen=200)
+    current_max_fps = 60 # Initialize max FPS
+    target_lps_history: Deque[TimestampedValue] = deque(maxlen=300) # History of target speed with timestamp
+    actual_lps_history: Deque[TimestampedValue] = deque(maxlen=int(300 * (1/LPS_CALC_INTERVAL))) # History of actual calculated LPS
+    render_fps_history: Deque[TimestampedValue] = deque(maxlen=300) # History for actual render FPS
 
     while True:
-        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path, updated_theme = start_screen(
+        mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path, updated_theme, updated_max_fps = start_screen( # Receive max FPS
             screen,
             clock,
             current_speed,
@@ -1948,7 +2070,8 @@ def main():
             mute,
             current_fill_percent,
             show_path_visualization,
-            current_theme
+            current_theme,
+            current_max_fps # Передаем ТЕКУЩЕЕ значение, а не будущее
         )
         current_speed = updated_speed
         current_volume = updated_volume
@@ -1956,6 +2079,7 @@ def main():
         current_fill_percent = updated_fill_percent
         show_path_visualization = updated_show_path
         current_theme = updated_theme
+        current_max_fps = updated_max_fps # Присваиваем обновленное значение FPS
         set_theme(current_theme)
 
         initial_current_speed = current_speed
@@ -1986,70 +2110,99 @@ def main():
                                    power=2.5)
 
         panel_alpha = 76
+        time_since_last_logic_update = 0.0 # Time accumulator for logic steps
+        # Variables for actual LPS calculation
+        lps_calc_timer = 0.0
+        lps_steps_since_last_calc = 0
+        actual_lps_display = 0.0 # Value to show in stats
 
         game_running = True
         while game_running:
+            frame_start_time = time.perf_counter()
+            # Limit rendering loop by max_fps setting
+            dt_ms = clock.tick(current_max_fps) # Use the user-defined max FPS
+            dt_seconds = dt_ms / 1000.0
+
+            # Calculate actual render FPS and add to history with timestamp
+            current_render_fps = clock.get_fps()
+            render_fps_history.append(TimestampedValue(current_render_fps))
+
+            time_since_last_logic_update += dt_seconds
+            lps_calc_timer += dt_seconds # Accumulate time for actual LPS calculation
+
             mouse_pos = pygame.mouse.get_pos()
             is_panel_hovered = speed_panel_rect.collidepoint(mouse_pos)
             panel_alpha = 255 if is_panel_hovered else 76
 
-            game_controls_active = not is_panel_hovered
+            # Allow game controls only if panel is not interacted with
+            # Panel interaction is checked within its event handling logic now
+            game_controls_active = True # Assume active unless panel interaction overrides
 
             game_speed_slider.value = snake.speed
             game_speed_slider.update_handle_pos()
 
             events = pygame.event.get()
+            panel_interacted_this_frame = False # Flag to check if slider was moved
             for event in events:
                 if event.type == pygame.QUIT:
                     if confirmation_dialog(screen, clock, "Quit Game?"):
                         pygame.quit()
                         sys.exit()
 
-                panel_interaction = False
+                # Handle speed panel interaction first
                 if is_panel_hovered:
-                    if event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-                        game_speed_slider.handle_event(event)
-                        snake.speed = int(game_speed_slider.value)
-                        panel_interaction = True
+                     original_speed_before_slider = snake.speed
+                     game_speed_slider.handle_event(event)
+                     new_speed_after_slider = int(game_speed_slider.value)
+                     if new_speed_after_slider != original_speed_before_slider:
+                         snake.speed = new_speed_after_slider
+                         time_since_last_logic_update = 0.0 # Reset accumulator on interactive speed change
+                         panel_interacted_this_frame = True
 
-                if event.type == pygame.KEYDOWN:
+
+                if not panel_interacted_this_frame and event.type == pygame.KEYDOWN: # Process other keys only if panel wasn't interacted with
                     if event.key == pygame.K_ESCAPE:
-                        game_running = False
-                    
+                        game_running = False # Exit current game loop to show start screen
+
+                    # Manual movement controls
                     if snake.mode == 'manual':
-                        if event.key == pygame.K_UP: snake.turn(UP)
-                        elif event.key == pygame.K_DOWN: snake.turn(DOWN)
-                        elif event.key == pygame.K_LEFT: snake.turn(LEFT)
-                        elif event.key == pygame.K_RIGHT: snake.turn(RIGHT)
-                        elif event.key == pygame.K_w: snake.turn(UP)
-                        elif event.key == pygame.K_s: snake.turn(DOWN)
-                        elif event.key == pygame.K_a: snake.turn(LEFT)
-                        elif event.key == pygame.K_d: snake.turn(RIGHT)
-                    
-                    if event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS:
+                        if event.key in [pygame.K_UP, pygame.K_w]: snake.turn(UP)
+                        elif event.key in [pygame.K_DOWN, pygame.K_s]: snake.turn(DOWN)
+                        elif event.key in [pygame.K_LEFT, pygame.K_a]: snake.turn(LEFT)
+                        elif event.key in [pygame.K_RIGHT, pygame.K_d]: snake.turn(RIGHT)
+
+                    # Speed adjustment keys
+                    if event.key in [pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS]:
                         snake.speed = min(5000, snake.speed + 10)
                         game_speed_slider.value = snake.speed
                         game_speed_slider.update_handle_pos()
-                    if event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
+                        time_since_last_logic_update = 0.0 # Reset accumulator
+                    if event.key in [pygame.K_MINUS, pygame.K_KP_MINUS]:
                         snake.speed = max(min_speed, snake.speed - 10)
                         game_speed_slider.value = snake.speed
                         game_speed_slider.update_handle_pos()
-                    
+                        time_since_last_logic_update = 0.0 # Reset accumulator
+
+                    # Pause
                     if event.key == pygame.K_p or event.key == pygame.K_SPACE:
                         pause_screen(screen, clock)
-                    
+                        # Reset time accumulator after unpausing to avoid sudden jump
+                        time_since_last_logic_update = 0.0
+                        lps_calc_timer = 0.0 # Reset LPS counter timer too
 
+
+                    # Theme switching
                     if event.key == pygame.K_q or event.key == pygame.K_e:
                         try:
                             theme_names = list(THEME_DEFINITIONS.keys())
                             current_index = theme_names.index(current_theme)
                             num_themes = len(theme_names)
-                            
+
                             if event.key == pygame.K_q:
                                 new_index = (current_index - 1 + num_themes) % num_themes
-                            else:
+                            else: # event.key == pygame.K_e
                                 new_index = (current_index + 1) % num_themes
-                            
+
                             current_theme = theme_names[new_index]
                             set_theme(current_theme)
                             snake._update_caches()
@@ -2061,16 +2214,56 @@ def main():
                             snake._update_caches()
                             food.color = current_colors['food']
 
-
-                if not game_running:
+                if not game_running: # Check again if ESC was pressed
                     break
 
-            if not game_running:
+            if not game_running: # Break outer loop if necessary
                 break
 
-            collision = snake.move(food.position)
+            # --- Time-Budgeted Game Logic Loop ---
+            logic_time_step = 1.0 / snake.speed if snake.speed > 0 else float('inf')
+            collision_detected_in_frame = False
+            # Calculate time budget for logic in this frame
+            # Use dt_seconds (actual time passed) or theoretical time? Let's use theoretical for stability
+            max_logic_time_this_frame = (1.0 / current_max_fps if current_max_fps > 0 else 0) * MAX_LOGIC_TIME_PERCENT_PER_FRAME
+            logic_start_time = time.perf_counter()
+            time_spent_on_logic_this_frame = 0.0
 
-            if collision:
+            while (time_since_last_logic_update >= logic_time_step and
+                   not collision_detected_in_frame and
+                   time_spent_on_logic_this_frame < max_logic_time_this_frame):
+
+                # Process one step of game logic
+                collision = snake.move(food.position)
+                lps_steps_since_last_calc += 1 # Increment counter for actual LPS calculation
+
+                if collision:
+                    collision_detected_in_frame = True # Set flag, actual handling after loop
+                elif snake.get_head_position() == food.position:
+                    food.randomize_position(snake_positions=snake.positions)
+                    if snake.mode == 'auto':
+                         snake.current_food_pos = food.position
+                    if eat_sound and not mute:
+                        eat_sound.play()
+
+                # Decrement accumulator *after* processing the step
+                time_since_last_logic_update = max(0.0, time_since_last_logic_update - logic_time_step)
+
+                # Update time spent on logic
+                time_spent_on_logic_this_frame = time.perf_counter() - logic_start_time
+
+            # --- Calculate Actual LPS periodically and add to history with timestamp ---
+            if lps_calc_timer >= LPS_CALC_INTERVAL:
+                if lps_calc_timer > 0: # Avoid division by zero
+                    current_actual_lps = lps_steps_since_last_calc / lps_calc_timer
+                    actual_lps_display = current_actual_lps # Update display value
+                    actual_lps_history.append(TimestampedValue(current_actual_lps))
+                # Reset counters for the next interval
+                lps_calc_timer = 0.0
+                lps_steps_since_last_calc = 0
+
+            # --- Handle Collision (after logic loop for the frame) ---
+            if collision_detected_in_frame:
                 final_history = deque(snake.history)
 
                 if melody_sound and not mute:
@@ -2106,8 +2299,9 @@ def main():
             food.draw(screen)
             display_statistics(screen, snake.length, snake.speed)
 
-            current_fps = clock.get_fps()
-            fps_history.append(current_fps)
+            # --- LPS/FPS Widget ---
+            # Add the *target* logic speed (snake.speed) to the history for graphing with timestamp
+            target_lps_history.append(TimestampedValue(snake.speed))
 
             graph_width = 100
             text_width = 45
@@ -2119,62 +2313,133 @@ def main():
 
             widget_x = SCREEN_WIDTH - total_width - margin_right
             widget_y = SCREEN_HEIGHT - graph_height - margin_bottom
-            fps_widget_rect = pygame.Rect(widget_x, widget_y, total_width, graph_height)
+            # Renamed rect for clarity
+            lps_widget_rect = pygame.Rect(widget_x, widget_y, total_width, graph_height)
 
             graph_x_rel = 0
             graph_y_rel = 0
             text_x_rel = graph_width + padding
             text_y_rel = 0
 
+            # Renamed variables for clarity
+            is_lps_widget_hovered = lps_widget_rect.collidepoint(mouse_pos)
+            lps_widget_alpha = 255 if is_lps_widget_hovered else 76
+            lps_bg_color_opaque = COLOR_PANEL_BG # Use existing panel color
+
+            # Renamed surface for clarity
+            lps_widget_surface = pygame.Surface(lps_widget_rect.size, pygame.SRCALPHA)
+
+            # Draw background for the LPS widget
+            pygame.draw.rect(lps_widget_surface, lps_bg_color_opaque, lps_widget_surface.get_rect(), border_radius=4)
+
+            # Draw the graph using the history of target LPS (snake.speed)
+            draw_lps_graph(lps_widget_surface, target_lps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'])
+
+            # Display Min/Avg/Max based on the *actual* calculated LPS history
+            # Filter for only the last 5 seconds
+            min_actual_lps = 0.0
+            max_actual_lps = 0.0
+            avg_actual_lps = 0.0
+
+            recent_actual_lps = get_values_in_timespan(actual_lps_history, STATS_DISPLAY_SECONDS)
+            if recent_actual_lps:
+                min_actual_lps = min(recent_actual_lps)
+                max_actual_lps = max(recent_actual_lps)
+                avg_actual_lps = sum(recent_actual_lps) / len(recent_actual_lps)
+
+            text_margin_in_area = 3
+
+            # Display Max Actual LPS
+            max_text_surf = font_tiny.render(f"{max_actual_lps:.0f}", True, current_colors['text'])
+            max_text_rect = max_text_surf.get_rect(topright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + text_margin_in_area))
+            lps_widget_surface.blit(max_text_surf, max_text_rect)
+
+            # Displaying Average Actual LPS
+            avg_text_surf = font_tiny.render(f"{avg_actual_lps:.0f}", True, current_colors['text'])
+            avg_text_rect = avg_text_surf.get_rect(midright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height // 2))
+            lps_widget_surface.blit(avg_text_surf, avg_text_rect)
+
+            # Display Min Actual LPS
+            min_text_surf = font_tiny.render(f"{min_actual_lps:.0f}", True, current_colors['text'])
+            min_text_rect = min_text_surf.get_rect(bottomright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height - text_margin_in_area))
+            lps_widget_surface.blit(min_text_surf, min_text_rect)
+
+            # Set alpha and blit the LPS widget
+            lps_widget_surface.set_alpha(lps_widget_alpha)
+            screen.blit(lps_widget_surface, lps_widget_rect.topleft)
+
+            # --- FPS Widget (Bottom Left) ---
+            fps_widget_width = total_width # Same size as LPS widget
+            fps_widget_height = graph_height
+            fps_widget_margin_left = 10
+            fps_widget_margin_bottom = 10
+            fps_widget_x = fps_widget_margin_left
+            fps_widget_y = SCREEN_HEIGHT - fps_widget_height - fps_widget_margin_bottom
+            fps_widget_rect = pygame.Rect(fps_widget_x, fps_widget_y, fps_widget_width, fps_widget_height)
+
             is_fps_widget_hovered = fps_widget_rect.collidepoint(mouse_pos)
             fps_widget_alpha = 255 if is_fps_widget_hovered else 76
-            fps_bg_color_opaque = COLOR_PANEL_BG
+            fps_bg_color_opaque = COLOR_PANEL_BG # Use panel background color
 
             fps_widget_surface = pygame.Surface(fps_widget_rect.size, pygame.SRCALPHA)
-
+            # Draw background for the FPS widget
             pygame.draw.rect(fps_widget_surface, fps_bg_color_opaque, fps_widget_surface.get_rect(), border_radius=4)
 
-            draw_fps_graph(fps_widget_surface, fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'])
+            # Draw the graph using the history of actual render FPS
+            draw_fps_graph(fps_widget_surface, render_fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'], target_fps=current_max_fps)
 
-            if fps_history:
-                min_fps = min(fps_history)
-                max_fps_hist = max(fps_history)
-                avg_fps = sum(fps_history) / len(fps_history)
-                text_margin_in_area = 3
+            # Display Min/Avg/Max based on the actual render FPS history (last 5 seconds)
+            min_render_fps = 0.0
+            max_render_fps = 0.0
+            avg_render_fps = 0.0
 
-                max_text_surf = font_tiny.render(f"{max_fps_hist:.0f}", True, current_colors['text'])
-                max_text_rect = max_text_surf.get_rect(topright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + text_margin_in_area))
-                fps_widget_surface.blit(max_text_surf, max_text_rect)
-                avg_text_surf = font_tiny.render(f"{avg_fps:.0f}", True, current_colors['text'])
-                avg_text_rect = avg_text_surf.get_rect(midright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height // 2))
-                fps_widget_surface.blit(avg_text_surf, avg_text_rect)
-                min_text_surf = font_tiny.render(f"{min_fps:.0f}", True, current_colors['text'])
-                min_text_rect = min_text_surf.get_rect(bottomright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height - text_margin_in_area))
-                fps_widget_surface.blit(min_text_surf, min_text_rect)
+            recent_render_fps = get_values_in_timespan(render_fps_history, STATS_DISPLAY_SECONDS)
+            if recent_render_fps:
+                min_render_fps = min(recent_render_fps)
+                max_render_fps = max(recent_render_fps)
+                avg_render_fps = sum(recent_render_fps) / len(recent_render_fps)
 
+            # Display Max Render FPS
+            max_fps_text_surf = font_tiny.render(f"{max_render_fps:.0f}", True, current_colors['text'])
+            max_fps_text_rect = max_fps_text_surf.get_rect(topright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + text_margin_in_area))
+            fps_widget_surface.blit(max_fps_text_surf, max_fps_text_rect)
+
+            # Displaying Average Render FPS
+            avg_fps_text_surf = font_tiny.render(f"{avg_render_fps:.0f}", True, current_colors['text'])
+            avg_fps_text_rect = avg_fps_text_surf.get_rect(midright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height // 2))
+            fps_widget_surface.blit(avg_fps_text_surf, avg_fps_text_rect)
+
+            # Display Min Render FPS
+            min_fps_text_surf = font_tiny.render(f"{min_render_fps:.0f}", True, current_colors['text'])
+            min_fps_text_rect = min_fps_text_surf.get_rect(bottomright=(text_x_rel + text_width - text_margin_in_area, graph_y_rel + graph_height - text_margin_in_area))
+            fps_widget_surface.blit(min_fps_text_surf, min_fps_text_rect)
+
+            # Set alpha and blit the FPS widget
             fps_widget_surface.set_alpha(fps_widget_alpha)
-
             screen.blit(fps_widget_surface, fps_widget_rect.topleft)
 
+            # --- Speed Control Panel (remains the same) ---
             panel_bg_color_tuple = (current_colors['panel_bg'].r, current_colors['panel_bg'].g, current_colors['panel_bg'].b, panel_alpha)
             panel_surface = pygame.Surface(speed_panel_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(panel_surface, panel_bg_color_tuple, panel_surface.get_rect(), border_radius=4)
 
-            panel_title_surf = font_panel.render("Speed", True, current_colors['text_white'])
+            panel_title_surf = font_panel.render("Speed (LPS)", True, current_colors['text_white']) # Changed label
             panel_title_rect = panel_title_surf.get_rect(centerx=panel_surface.get_rect().centerx, top=8)
             panel_surface.blit(panel_title_surf, panel_title_rect)
 
+            # Draw slider within the panel surface (relative coordinates)
             original_slider_rect = game_speed_slider.rect.copy()
             game_speed_slider.rect.topleft = (slider_margin_h, slider_margin_top)
             game_speed_slider.draw(panel_surface)
-            game_speed_slider.rect = original_slider_rect
+            game_speed_slider.rect = original_slider_rect # Restore original rect if needed elsewhere
 
             panel_surface.set_alpha(panel_alpha)
-
             screen.blit(panel_surface, speed_panel_rect.topleft)
+            # --- End Speed Control Panel ---
+
 
             pygame.display.update()
-            clock.tick(snake.speed)
+            # clock.tick(current_max_fps) is already called at the top
 
 def unsaved_settings_dialog(surface, clock):
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -2281,7 +2546,7 @@ def unsaved_settings_dialog(surface, clock):
         surface.blit(temp_surface, (0,0))
 
         pygame.display.update(dialog_rect.inflate(4,4))
-        clock.tick(60)
+        clock.tick(60) # Высокий FPS для диалогов чтобы UI был отзывчивым
 
     return result
 
