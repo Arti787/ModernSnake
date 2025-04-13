@@ -687,8 +687,6 @@ class Snake:
         self._neighboring_segments_cache: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {}
         self._update_caches()
         self.hamiltonian_path: List[Tuple[int, int]] = self._generate_hamiltonian_cycle_path()
-        self.current_hamiltonian_target_index: Optional[int] = None # Индекс цели на цикле
-        self.is_following_cycle_perfectly = False # НОВЫЙ ФЛАГ
 
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
@@ -829,95 +827,74 @@ class Snake:
         fill_percentage = self.length / (GRID_WIDTH * GRID_HEIGHT)
         force_survival_fill_mode = fill_percentage > 0.80 # Используем твой порог 80%
 
-        path_calculated_for_cycle = False # Флаг расчета пути по циклу (не обязательно идеального)
+        # Флаг больше не нужен для идеального следования,
+        # но оставим для обновления пути в конце
+        path_calculated_for_cycle = False 
 
         if force_survival_fill_mode:
-            # --- Режим >80% ---
-            self.current_path = [] # Сбрасываем старые пути
+            # --- Режим Следования Гамильтонову Циклу (>80%) ---
+            # ВСЕГДА пытаемся найти безопасный путь к циклу
+            self.current_path = [] 
             self.path = []
             self.recalculate_path = False
             self.survival_mode_steps_remaining = 0
 
-            # Проверяем, следуем ли мы уже идеально циклу
-            if self.is_following_cycle_perfectly:
-                # --- Идеальное следование циклу ---
-                try:
-                    head_index = self.hamiltonian_path.index(head)
-                    target_index = (head_index + 1) % len(self.hamiltonian_path)
+            try:
+                head_index = self.hamiltonian_path.index(head)
+                path_found_on_cycle = False
+                for lookahead_steps in [1, 2]: # Пробуем +1 и +2 шага
+                    target_index = (head_index + lookahead_steps) % len(self.hamiltonian_path)
                     target_cell = self.hamiltonian_path[target_index]
+                    path_to_cycle_target = self.path_find.find_path(head, target_cell, list(self.positions), is_target_food=False)
 
-                    # Прямой расчет направления
-                    dx = target_cell[0] - head[0]; dy = target_cell[1] - head[1]
-                    if abs(dx) > GRID_WIDTH / 2: dx = - (GRID_WIDTH - abs(dx)) * (1 if dx > 0 else -1)
-                    if abs(dy) > GRID_HEIGHT / 2: dy = - (GRID_HEIGHT - abs(dy)) * (1 if dy > 0 else -1)
-                    if dx != 0: dx = dx // abs(dx); dy = 0
-                    elif dy != 0: dy = dy // abs(dy); dx = 0
-                    else: dx, dy = self.direction # На случай head == target_cell (не должно быть)
-                    self.next_direction = (dx, dy)
-                    path_calculated_for_cycle = True # Считаем, что движемся по циклу
+                    # ВСЕГДА проверяем безопасность пути к цели
+                    if path_to_cycle_target and self._is_path_to_target_safe(path_to_cycle_target):
+                        self.current_path = path_to_cycle_target
+                        self.path = path_to_cycle_target
+                        if len(self.current_path) > 1:
+                            # Расчет направления (как было)
+                            next_step = self.current_path[1]
+                            dx = next_step[0] - head[0]; dy = next_step[1] - head[1]
+                            if abs(dx) > GRID_WIDTH / 2: dx = - (GRID_WIDTH - abs(dx)) * (1 if dx > 0 else -1)
+                            if abs(dy) > GRID_HEIGHT / 2: dy = - (GRID_HEIGHT - abs(dy)) * (1 if dy > 0 else -1)
+                            if dx != 0: dx = dx // abs(dx); dy = 0
+                            elif dy != 0: dy = dy // abs(dy); dx = 0
+                            else: dx, dy = self.direction
+                            self.next_direction = (dx, dy)
 
-                except ValueError: # Голова внезапно слетела с цикла? Откат.
-                    print(f"WARN: Head {head} lost from Hamiltonian cycle while supposedly following!")
-                    self.is_following_cycle_perfectly = False
-                    self.next_direction = self._find_standard_survival_move() or self.direction
-
-            else:
-                # --- Попытка вернуться на цикл или стандартное выживание ---
-                try:
-                    head_index = self.hamiltonian_path.index(head)
-                    path_found_on_cycle = False
-                    for lookahead_steps in [1, 2]: # Пробуем +1 и +2 шага
-                        target_index = (head_index + lookahead_steps) % len(self.hamiltonian_path)
-                        target_cell = self.hamiltonian_path[target_index]
-                        path_to_cycle_target = self.path_find.find_path(head, target_cell, list(self.positions), is_target_food=False)
-
-                        if path_to_cycle_target and self._is_path_to_target_safe(path_to_cycle_target):
-                            self.current_path = path_to_cycle_target
-                            self.path = path_to_cycle_target
-                            if len(self.current_path) > 1:
-                                # Расчет направления (как было раньше)
-                                next_step = self.current_path[1]
-                                dx = next_step[0] - head[0]; dy = next_step[1] - head[1]
-                                if abs(dx) > GRID_WIDTH / 2: dx = - (GRID_WIDTH - abs(dx)) * (1 if dx > 0 else -1)
-                                if abs(dy) > GRID_HEIGHT / 2: dy = - (GRID_HEIGHT - abs(dy)) * (1 if dy > 0 else -1)
-                                if dx != 0: dx = dx // abs(dx); dy = 0
-                                elif dy != 0: dy = dy // abs(dy); dx = 0
-                                else: dx, dy = self.direction
-                                self.next_direction = (dx, dy)
-
-                                calc_next_pos = ((head[0] + dx) % GRID_WIDTH, (head[1] + dy) % GRID_HEIGHT)
-                                if calc_next_pos != next_step:
-                                    print(f"WARN: Cycle Direction mismatch! Head:{head}, Next:{next_step}, Dir:{self.next_direction}")
-                                    self.next_direction = self._find_standard_survival_move() or self.direction
-                                    path_calculated_for_cycle = False
-                                else:
-                                    path_calculated_for_cycle = True
-                                    path_found_on_cycle = True
-                                    break # Нашли путь
-                            else:
+                            calc_next_pos = ((head[0] + dx) % GRID_WIDTH, (head[1] + dy) % GRID_HEIGHT)
+                            if calc_next_pos != next_step:
+                                print(f"WARN: Cycle Direction mismatch! Head:{head}, Next:{next_step}, Dir:{self.next_direction}")
                                 self.next_direction = self._find_standard_survival_move() or self.direction
                                 path_calculated_for_cycle = False
-                                break # Странный путь, откат
+                            else:
+                                path_calculated_for_cycle = True # Путь рассчитан (хоть и не идеальный)
+                                path_found_on_cycle = True
+                                break # Нашли безопасный путь
+                        else:
+                            self.next_direction = self._find_standard_survival_move() or self.direction
+                            path_calculated_for_cycle = False
+                            break # Странный путь
 
-                    if not path_found_on_cycle: # Если не нашли безопасный путь к +1 или +2
-                        self.next_direction = self._find_standard_survival_move() or self.direction
-                        path_calculated_for_cycle = False
-
-                except ValueError: # Голова не на цикле - используем выживание
-                    print(f"WARN: Head {head} not on Hamiltonian cycle during recovery attempt!")
+                if not path_found_on_cycle: # Не нашли безопасный путь ни к +1, ни к +2
                     self.next_direction = self._find_standard_survival_move() or self.direction
                     path_calculated_for_cycle = False
 
+            except ValueError: # Голова не на цикле
+                print(f"WARN: Head {head} not on Hamiltonian cycle during >80% mode!")
+                self.next_direction = self._find_standard_survival_move() or self.direction
+                path_calculated_for_cycle = False
+
         else:
             # --- Стандартный режим (<80%) ---
-            # ... (логика без изменений, использует _find_standard_survival_move) ...
-            if self.survival_mode_steps_remaining > 0:
+            # ... (логика без изменений) ...
+             if self.survival_mode_steps_remaining > 0:
                  self.survival_mode_steps_remaining -= 1
                  survival_direction = self._find_standard_survival_move()
                  if not survival_direction: survival_direction = self.find_immediate_safe_direction()
                  self.next_direction = survival_direction or self.direction
                  self.current_path = []; self.path = []; self.recalculate_path = False
-            else:
+             else:
                  if self.recalculate_path or not self.current_path:
                       path_to_food = self.path_find.find_path(head, food_pos, list(self.positions), is_target_food=True)
                       if path_to_food and self.is_path_safe_to_food(path_to_food):
@@ -938,18 +915,12 @@ class Snake:
 
         # --- Общее для всех режимов: Движение ---
         self.direction = self.next_direction
-        cur = self.get_head_position() # cur == head
+        cur = self.get_head_position() 
         x, y = self.direction
         new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
-        collision = self.move_forward(new_head_pos) # ВАЖНО: Это обновляет self.positions
+        collision = self.move_forward(new_head_pos)
 
-        # --- Обновляем флаг идеального следования ПОСЛЕ хода ---
-        if force_survival_fill_mode:
-            self.is_following_cycle_perfectly = self._check_perfect_cycle_following()
-        else:
-            self.is_following_cycle_perfectly = False # Сбрасываем флаг вне режима >80%
-
-        # --- Обновление пути (если это был не путь по циклу) ---
+        # --- Обновление пути (если это был НЕ путь по циклу) ---
         if not path_calculated_for_cycle and self.survival_mode_steps_remaining == 0 and not self.recalculate_path and self.current_path and not collision:
              if self.current_path and self.current_path[0] == cur:
                  self.current_path.pop(0)
@@ -1356,46 +1327,62 @@ class Snake:
         print(f"Generated Hamiltonian cycle with {len(path)} steps.") # Отладка
         return path
 
-    # НОВЫЙ МЕТОД ПРОВЕРКИ
-    def _check_perfect_cycle_following(self):
-        """Проверяет, совпадает ли тело змейки с участком Гамильтонова цикла."""
-        if not self.hamiltonian_path: return False
-
-        positions_list = list(self.positions)
-        snake_len = len(positions_list)
-        # Слишком короткая змейка или нет пути - не может идеально следовать
-        if snake_len <= 1 or not self.hamiltonian_path:
-             return False
-
-        head = positions_list[0]
-        try:
-            head_index = self.hamiltonian_path.index(head)
-        except ValueError:
-            return False # Голова не на цикле
-
-        path_len = len(self.hamiltonian_path)
-        for i in range(snake_len):
-            snake_segment = positions_list[i]
-            # Индекс на цикле для i-го сегмента тела (голова - 0)
-            expected_cycle_index = (head_index - i + path_len) % path_len
-            expected_pos = self.hamiltonian_path[expected_cycle_index]
-
-            if snake_segment != expected_pos:
-                return False # Сегмент не совпал с циклом
-
-        return True # Все сегменты совпали
-
 class Food:
     def __init__(self):
         self.position = (0, 0)
-        self.color = current_colors['food']
+        self.color = current_colors['food']  # Сохраняем атрибут color
         self.randomize_position([])
 
     def randomize_position(self, snake_positions: List[Tuple[int, int]] | Deque[Tuple[int, int]]):
-        while True:
+        # Проверка на полное заполнение поля
+        occupied = set(snake_positions)
+        fill_percentage = len(occupied) / (GRID_WIDTH * GRID_HEIGHT)
+        
+        # Защита от ошибки: если все клетки заняты, не пытаемся найти позицию
+        if len(occupied) >= GRID_WIDTH * GRID_HEIGHT:
+            print("Все клетки заняты, победа!")
+            return
+        
+        if len(snake_positions) >= GRID_WIDTH * GRID_HEIGHT - 1:
+            # Осталась только одна клетка - последняя еда
+            try:
+                self.position = next(pos for pos in 
+                                  ((x, y) for x in range(GRID_WIDTH) for y in range(GRID_HEIGHT))
+                                  if pos not in occupied)
+            except StopIteration:
+                print("Не удалось найти свободную клетку, хотя должна быть одна.")
+                # В крайнем случае устанавливаем любую позицию
+                self.position = (0, 0)
+            return
+        
+        # При высоком заполнении (>90%) сразу переходим к последовательному поиску
+        if fill_percentage > 0.9:
+            self._find_sequential(occupied)
+            return
+            
+        # Ограничиваем количество попыток найти свободную клетку
+        # Уменьшаем число попыток при высоком заполнении
+        max_attempts = max(100, int(1000 * (1 - fill_percentage)))
+        attempts = 0
+        
+        while attempts < max_attempts:
             self.position = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
-            if self.position not in snake_positions:
-                break
+            if self.position not in occupied:
+                return
+            attempts += 1
+            
+        # Если после max_attempts не удалось найти случайную позицию, 
+        # находим первую свободную клетку последовательным перебором
+        self._find_sequential(occupied)
+    
+    def _find_sequential(self, occupied: Set[Tuple[int, int]]):
+        """Оптимизированный последовательный поиск свободной клетки."""
+        for x in range(GRID_WIDTH):
+            for y in range(GRID_HEIGHT):
+                pos = (x, y)
+                if pos not in occupied:
+                    self.position = pos
+                    return
 
     def draw(self, surface):
         draw_object(surface, self.color, self.position)
@@ -2317,8 +2304,6 @@ def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y
     label_rect = label_surf.get_rect(bottomleft=(x + 3, y + height - 3))
     surface.blit(label_surf, label_rect)
 
-
-# LPS_CALC_INTERVAL = 0.5 # Calculate actual LPS every 0.5 seconds - больше не используется
 MAX_LOGIC_TIME_PERCENT_PER_FRAME = 0.85 # Max % of frame time for logic
 STATS_DISPLAY_SECONDS = 5.0 # Display stats for the last 5 seconds
 
@@ -2556,9 +2541,20 @@ def main():
             # --- Time-Budgeted Game Logic Loop ---
             logic_time_step = 1.0 / snake.speed if snake.speed > 0 else float('inf')
             collision_detected_in_frame = False
+            
+            # Адаптируем бюджет времени на логику в зависимости от заполнения поля
+            fill_percentage = snake.length / (GRID_WIDTH * GRID_HEIGHT)
+            
+            # При высоком заполнении увеличиваем доступное время на логику
+            adjusted_max_logic_percent = MAX_LOGIC_TIME_PERCENT_PER_FRAME
+            if fill_percentage > 0.95:
+                # На финальном этапе заполнения даём больше времени на логику
+                adjusted_max_logic_percent = 0.95  # 95% времени кадра на логику
+            elif fill_percentage > 0.9:
+                adjusted_max_logic_percent = 0.9  # 90% времени кадра на логику
+            
             # Calculate time budget for logic in this frame
-            # Use dt_seconds (actual time passed) or theoretical time? Let's use theoretical for stability
-            max_logic_time_this_frame = (1.0 / current_max_fps if current_max_fps > 0 else 0) * MAX_LOGIC_TIME_PERCENT_PER_FRAME
+            max_logic_time_this_frame = (1.0 / current_max_fps if current_max_fps > 0 else 0) * adjusted_max_logic_percent
             logic_start_time = time.perf_counter()
             time_spent_on_logic_this_frame = 0.0
 
@@ -2604,13 +2600,89 @@ def main():
                 else:
                     game_running = False
 
-            elif snake.get_head_position() == food.position:
-                food.randomize_position(snake_positions=snake.positions)
-                if snake.mode == 'auto':
-                     snake.current_food_pos = food.position
+            # Проверка на победу - змейка заполнила всё поле
+            elif snake.length >= GRID_WIDTH * GRID_HEIGHT:
+                # ВАЖНО: Сначала отрисовываем финальный кадр с полным полем
+                screen.fill(current_colors['background'])
+                draw_grid(screen)
+                
+                if snake.mode == 'auto' and show_path_visualization and snake.path:
+                    draw_path(screen, snake.path)
+                
+                snake.draw(screen)
+                display_statistics(screen, snake.length, snake.speed)
+                
+                # Отрисовываем виджеты (если они активны)
+                pygame.display.update()
+                
+                # Небольшая задержка перед показом экрана победы
+                pygame.time.delay(500)  # 500 мс = 0.5 секунды
+                
+                if melody_sound and not mute:
+                    melody_sound.play()
+                
+                current_speed_on_victory = int(snake.speed)
+                
+                # Вызываем экран победы
+                should_restart = win_screen(screen, clock, snake.length, current_speed_on_victory)
+                
+                if should_restart:
+                    snake.reset(initial_fill_percentage=current_fill_percent)
+                    snake.speed = initial_current_speed
+                    food.randomize_position(snake_positions=snake.positions)
+                    game_controls_active = True
+                else:
+                    game_running = False
 
-                if eat_sound and not mute:
-                    eat_sound.play()
+            elif snake.get_head_position() == food.position:
+                # Проверяем, является ли это последней едой перед победой
+                if snake.length + 1 >= GRID_WIDTH * GRID_HEIGHT:
+                    snake.length += 1  # Увеличиваем длину для победы
+                    
+                    # ВАЖНО: Сначала отрисовываем финальный кадр с полным полем
+                    screen.fill(current_colors['background'])
+                    draw_grid(screen)
+                    
+                    # Обновляем положения змейки для отрисовки полного поля
+                    # Добавляем последнюю съеденную клетку в голову змеи
+                    snake.positions.appendleft(snake.get_head_position())
+                    snake._update_caches()
+                    
+                    if snake.mode == 'auto' and show_path_visualization and snake.path:
+                        draw_path(screen, snake.path)
+                    
+                    snake.draw(screen)
+                    display_statistics(screen, snake.length, snake.speed)
+                    
+                    # Отрисовываем виджеты FPS/LPS, если они активны
+                    # (копия соответствующего кода отрисовки из основного цикла)
+                    pygame.display.update()
+                    
+                    # Небольшая задержка, чтобы игрок успел увидеть заполненное поле
+                    pygame.time.delay(500)  # 500 мс = 0.5 секунды
+                    
+                    if melody_sound and not mute:
+                        melody_sound.play()
+                    
+                    current_speed_on_victory = int(snake.speed)
+                    
+                    # Вызываем экран победы
+                    should_restart = win_screen(screen, clock, snake.length, current_speed_on_victory)
+                    
+                    if should_restart:
+                        snake.reset(initial_fill_percentage=current_fill_percent)
+                        snake.speed = initial_current_speed
+                        food.randomize_position(snake_positions=snake.positions)
+                        game_controls_active = True
+                    else:
+                        game_running = False
+                else:
+                    food.randomize_position(snake_positions=snake.positions)
+                    if snake.mode == 'auto':
+                         snake.current_food_pos = food.position
+
+                    if eat_sound and not mute:
+                        eat_sound.play()
 
             screen.fill(current_colors['background'])
             draw_grid(screen)
@@ -2872,6 +2944,83 @@ def unsaved_settings_dialog(surface, clock):
         clock.tick(60) # Высокий FPS для диалогов чтобы UI был отзывчивым
 
     return result
+
+# Добавляем новую функцию win_screen
+
+def win_screen(surface, clock, final_length, final_speed):
+    """Shows the victory screen with stats and buttons."""
+    fade_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    fade_surf.fill((0, 0, 0, 200))  # Semi-transparent black background
+    surface.blit(fade_surf, (0, 0))
+    
+    font_large = pygame.font.SysFont(FONT_NAME_PRIMARY, 48)
+    font = pygame.font.SysFont(FONT_NAME_PRIMARY, 36)
+    small_font = pygame.font.SysFont(FONT_NAME_PRIMARY, 24)
+    
+    # Title
+    title = font_large.render("You Won!", True, (255, 255, 100))
+    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4))
+    surface.blit(title, title_rect)
+    
+    # Statistics
+    fill_percent = (final_length / (GRID_WIDTH * GRID_HEIGHT)) * 100
+    stats_text = [
+        f"Field Filled: {fill_percent:.2f}%",
+        f"Snake Length: {final_length}",
+        f"Speed: {final_speed}"
+    ]
+    
+    for i, text in enumerate(stats_text):
+        stat = font.render(text, True, (200, 200, 255))
+        stat_rect = stat.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + i * 40))
+        surface.blit(stat, stat_rect)
+    
+    # Buttons
+    button_width, button_height = 220, 60
+    button_y = SCREEN_HEIGHT * 2 // 3
+    
+    play_button = pygame.Rect(SCREEN_WIDTH // 2 - button_width - 20, button_y, button_width, button_height)
+    menu_button = pygame.Rect(SCREEN_WIDTH // 2 + 20, button_y, button_width, button_height)
+    
+    # No need for play_text and quit_text variables anymore
+    # Button states
+    restart_hovered = False
+    menu_hovered = False
+    restart_clicked = False
+    menu_clicked = False
+    
+    # Victory screen loop
+    win_screen_active = True
+    while win_screen_active:
+        mouse_pos = pygame.mouse.get_pos()
+        restart_hovered = play_button.collidepoint(mouse_pos)
+        menu_hovered = menu_button.collidepoint(mouse_pos)
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if restart_hovered:
+                    restart_clicked = True
+                if menu_hovered:
+                    menu_clicked = True
+            
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if restart_hovered and restart_clicked:
+                    return True # Return True to indicate restart
+                if menu_hovered and menu_clicked:
+                    return False # Return False to indicate back to main menu
+                restart_clicked = False
+                menu_clicked = False
+        
+        # Draw buttons
+        draw_button(surface, play_button, current_colors['button'], "Restart", restart_hovered, restart_clicked)
+        draw_button(surface, menu_button, current_colors['button'], "Main Menu", menu_hovered, menu_clicked)
+        
+        pygame.display.update()
+        clock.tick(60)
 
 if __name__ == '__main__':
     pygame.init()
