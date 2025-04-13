@@ -102,7 +102,7 @@ except pygame.error:
     melody_sound = None
     print(f"Warning: Sound file '{melody_sound_path}' not found or cannot be loaded.")
 
-SURVIVAL_MODE_DURATION = 100
+SURVIVAL_MODE_DURATION = 20
 
 # --- Централизованное определение тем ---
 def _generate_tyamba_colors():
@@ -965,41 +965,89 @@ class Snake:
     def find_survival_move(self) -> Tuple[int, int] | None:
         """
         Находит лучший ход для выживания: выбирает направление, которое после хода
-        оставляет максимально длинный путь до собственного хвоста.
-        Это эвристика, помогающая избегать самозапирания.
+        оставляет максимально большую достижимую пустую область (контроль территории).
+        При равенстве областей выбирает ход, максимизирующий путь до хвоста.
         Возвращает направление или None, если безопасных ходов нет.
         """
         best_direction = None
-        max_freedom = -1
+        max_freedom = -1 # Теперь это будет размер области, а не длина пути
+        max_tail_path_len_for_best_freedom = -1 # Для разрешения ничьих
 
         head = self.get_head_position()
-        possible_directions = [d for d in [UP, DOWN, LEFT, RIGHT] if d != (self.direction[0] * -1, self.direction[1] * -1)]
+        # Фильтруем сразу невалидные ходы (назад и в себя, кроме хвоста если длина > 1)
+        possible_directions = []
+        current_positions_set = self.positions_set # Используем кэш set
+        tail_pos = self.positions[-1] if len(self.positions) > 1 else None
 
-        current_positions_list = list(self.positions)
+        for d in [UP, DOWN, LEFT, RIGHT]:
+            # Нельзя разворачиваться на 180 градусов
+            if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1):
+                continue
+
+            next_head = ((head[0] + d[0]) % GRID_WIDTH, (head[1] + d[1]) % GRID_HEIGHT)
+
+            # Нельзя идти в себя (кроме хвоста, который освободится)
+            is_collision = next_head in current_positions_set and next_head != tail_pos
+            if not is_collision:
+                possible_directions.append(d)
+        
+        # Если есть только один безопасный ход (вероятно, на хвост), берем его
+        if len(possible_directions) == 1:
+            return possible_directions[0]
+            
+        # Если безопасных ходов нет (даже на хвост) - это плохо
+        if not possible_directions:
+             # Попытаемся найти ход хотя бы на хвост, если он есть
+             for d in [UP, DOWN, LEFT, RIGHT]:
+                 if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1):
+                     continue
+                 next_head = ((head[0] + d[0]) % GRID_WIDTH, (head[1] + d[1]) % GRID_HEIGHT)
+                 if next_head == tail_pos:
+                     return d # Отчаянный ход на хвост
+             return None # Совсем нет ходов
+
+        current_positions_list = list(self.positions) # Для симуляции
 
         for direction in possible_directions:
             next_head = ((head[0] + direction[0]) % GRID_WIDTH, (head[1] + direction[1]) % GRID_HEIGHT)
 
-            if len(self.positions) > 1 and next_head in itertools.islice(self.positions, 0, len(self.positions) - 1):
-                 continue
-
+            # Симулируем ход
+            # Начальное состояние передаем как список
             sim_snake_list = self.simulate_move([head, next_head], grows=False, initial_state=current_positions_list)
-            if sim_snake_list is None:
+            if sim_snake_list is None: # Симуляция показала самопересечение (хотя первичная проверка прошла)
                 continue
 
             sim_head = sim_snake_list[0]
-            sim_tail = sim_snake_list[-1]
-            path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
+            sim_obstacles = set(sim_snake_list)
 
-
-            if path_to_tail:
-                 freedom = len(path_to_tail) + self.path_find._heuristic(sim_head, sim_tail) * 0.5
-            else:
-                 freedom = self.path_find._heuristic(sim_head, sim_tail) * 0.2 
+            # Вычисляем размер доступной территории
+            freedom = self._calculate_reachable_empty_space(sim_head, sim_obstacles)
 
             if freedom > max_freedom:
                 max_freedom = freedom
+                # При нахождении новой лучшей области, также вычисляем путь до хвоста
+                sim_tail = sim_snake_list[-1]
+                path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
+                max_tail_path_len_for_best_freedom = len(path_to_tail) if path_to_tail else 0
                 best_direction = direction
+            elif freedom == max_freedom and freedom != -1: # Если область такая же, сравниваем путь до хвоста
+                sim_tail = sim_snake_list[-1]
+                path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
+                current_tail_path_len = len(path_to_tail) if path_to_tail else 0
+                
+                if current_tail_path_len > max_tail_path_len_for_best_freedom:
+                    max_tail_path_len_for_best_freedom = current_tail_path_len
+                    best_direction = direction # Обновляем направление, так как путь до хвоста лучше
+            # Опциональный Tie-breaker: если доступная область одинакова,
+            # можно добавить старую логику с путем до хвоста. Пока опустим для простоты.
+            # elif freedom == max_freedom and best_direction is not None:
+            #     # Сравниваем пути до хвоста для текущего лучшего и нового направления
+            #     pass
+
+        # Если best_direction так и не нашелся (например, все симуляции вели в тупик),
+        # попробуем вернуть любой безопасный ход из первоначального списка
+        if best_direction is None and possible_directions:
+             return random.choice(possible_directions) # Или первый попавшийся
 
         return best_direction
 
@@ -1080,6 +1128,29 @@ class Snake:
                  print(f"Warning: Failed to generate snake for {initial_fill_percentage}%, starting with default.")
 
         self._update_caches()
+
+    def _calculate_reachable_empty_space(self, start_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]) -> int:
+        """
+        Вычисляет количество достижимых пустых клеток от start_pos с помощью BFS,
+        избегая клеток из obstacles.
+        """
+        if start_pos in obstacles:
+            return 0
+
+        q = deque([start_pos])
+        visited = {start_pos}
+        count = 0
+
+        while q:
+            current_pos = q.popleft()
+            count += 1
+
+            # Используем существующий метод get_neighbors из PathFind
+            for neighbor_pos in self.path_find.get_neighbors(current_pos):
+                if neighbor_pos not in obstacles and neighbor_pos not in visited:
+                    visited.add(neighbor_pos)
+                    q.append(neighbor_pos)
+        return count
 
 class Food:
     def __init__(self):
@@ -1301,7 +1372,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed (LPS)", power=2.5)
     y_pos += 70
 
-    max_fps_slider = Slider(widget_x, y_pos, slider_width, slider_height, 30, 120, current_max_fps, "Max Render FPS")
+    max_fps_slider = Slider(widget_x, y_pos, slider_width, slider_height, 15, 240, current_max_fps, "Max Render FPS")
     y_pos += 70
 
     volume_slider = Slider(widget_x, y_pos, slider_width, slider_height, 0, 100, current_volume, "Sound Volume")
@@ -1944,19 +2015,20 @@ def get_direction_vector(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> Tuple[
     return dx, dy
 
 # --- Функция для отрисовки графика LPS (бывший FPS) ---
-def draw_lps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color):
-    """Рисует простой линейный график на основе истории значений (LPS)."""
+def draw_lps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color, font: Font):
+    """Рисует простой линейный график на основе истории значений (LPS) и добавляет подпись."""
     if not history:
         return
     history_len = len(history)
-    max_lps_hist = 1.0 # Renamed variable
+    max_lps_hist = 1.0
     if history_len > 0:
         # Фильтруем только последние 5 секунд для графика
         recent_values = get_values_in_timespan(history, 5.0)
         if recent_values:
-            max_lps_hist = max(10.0, max(recent_values)) # Ensure minimum scale, renamed variable
-    # Dynamic scaling based on logic speed, not fixed 60fps
-    dynamic_max_y = max(30.0, max_lps_hist * 1.1) # Adjusted minimum and variable name
+            # Масштабируем по недавним РЕАЛЬНЫМ значениям
+            max_lps_hist = max(15.0, max(recent_values) * 1.1) # Минимум 15 для адекватного вида
+    # Dynamic scaling based on logic speed
+    dynamic_max_y = max(30.0, max_lps_hist) # Убрал множитель 1.1, т.к. уже есть в max_lps_hist
 
     points = []
     for i, item in enumerate(history):
@@ -1972,9 +2044,14 @@ def draw_lps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y
     elif len(points) == 1:
         pygame.draw.circle(surface, color, points[0], 2)
 
+    # Добавляем подпись "LPS"
+    label_surf = font.render("LPS", True, color.lerp((255,255,255), 0.5))
+    label_rect = label_surf.get_rect(bottomleft=(x + 3, y + height - 3))
+    surface.blit(label_surf, label_rect)
+
 # --- Функция для отрисовки графика FPS (аналогично LPS) ---
-def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color, target_fps: float):
-    """Рисует простой линейный график для FPS."""
+def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y: int, width: int, height: int, color: pygame.Color, target_fps: float, font: Font):
+    """Рисует простой линейный график для FPS и добавляет подпись."""
     if not history:
         return
     history_len = len(history)
@@ -2002,8 +2079,13 @@ def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y
     elif len(points) == 1:
         pygame.draw.circle(surface, color, points[0], 2)
 
-MAX_LOGIC_STEPS_PER_FRAME = 100 # Limit logic steps per render frame to prevent freezes
-LPS_CALC_INTERVAL = 0.5 # Calculate actual LPS every 0.5 seconds
+    # Добавляем подпись "FPS"
+    label_surf = font.render("FPS", True, color.lerp((255,255,255), 0.5))
+    label_rect = label_surf.get_rect(bottomleft=(x + 3, y + height - 3))
+    surface.blit(label_surf, label_rect)
+
+
+# LPS_CALC_INTERVAL = 0.5 # Calculate actual LPS every 0.5 seconds - больше не используется
 MAX_LOGIC_TIME_PERCENT_PER_FRAME = 0.85 # Max % of frame time for logic
 STATS_DISPLAY_SECONDS = 5.0 # Display stats for the last 5 seconds
 
@@ -2019,18 +2101,21 @@ def main():
         font_icon = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_MEDIUM)
         font_panel = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_SMALL)
         font_tiny = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_TINY)
+        font_graph_label = pygame.font.SysFont(FONT_NAME_PRIMARY, FONT_SIZE_TINY - 2) # Шрифт для подписей графиков
     except Exception as e:
         print(f"Primary font ('{FONT_NAME_PRIMARY}') not found, using fallback 'arial'. Error: {e}")
         try:
             font_icon = pygame.font.SysFont('arial', FONT_SIZE_MEDIUM - 2)
             font_panel = pygame.font.SysFont('arial', FONT_SIZE_SMALL - 2)
             font_tiny = pygame.font.SysFont('arial', FONT_SIZE_TINY - 1)
+            font_graph_label = pygame.font.SysFont('arial', FONT_SIZE_TINY - 3)
         except Exception as fallback_e:
             print(f"Fallback font 'arial' also not found. Text rendering might fail. Error: {fallback_e}")
             # As a last resort, use Pygame's default font
             font_icon = pygame.font.Font(None, FONT_SIZE_MEDIUM)
             font_panel = pygame.font.Font(None, FONT_SIZE_SMALL)
             font_tiny = pygame.font.Font(None, FONT_SIZE_TINY)
+            font_graph_label = pygame.font.Font(None, FONT_SIZE_TINY - 2)
 
     # --- Sound Initialization ---
     try:
@@ -2058,8 +2143,11 @@ def main():
     current_theme = "default"
     current_max_fps = 60 # Initialize max FPS
     target_lps_history: Deque[TimestampedValue] = deque(maxlen=300) # History of target speed with timestamp
-    actual_lps_history: Deque[TimestampedValue] = deque(maxlen=int(300 * (1/LPS_CALC_INTERVAL))) # History of actual calculated LPS
+    actual_lps_history: Deque[TimestampedValue] = deque(maxlen=300) # Увеличен размер истории LPS до соответствия с FPS
     render_fps_history: Deque[TimestampedValue] = deque(maxlen=300) # History for actual render FPS
+    last_lps_values = deque(maxlen=30)  # Буфер для сглаживания LPS по 30 последним значениям
+    for _ in range(30):  # Заполняем начальными нулевыми значениями
+        last_lps_values.append(0.0)
 
     while True:
         mode, updated_speed, updated_volume, updated_mute, updated_fill_percent, updated_show_path, updated_theme, updated_max_fps = start_screen( # Receive max FPS
@@ -2112,9 +2200,9 @@ def main():
         panel_alpha = 76
         time_since_last_logic_update = 0.0 # Time accumulator for logic steps
         # Variables for actual LPS calculation
-        lps_calc_timer = 0.0
         lps_steps_since_last_calc = 0
         actual_lps_display = 0.0 # Value to show in stats
+        last_frame_time = time.perf_counter()  # Время предыдущего кадра для расчета LPS
 
         game_running = True
         while game_running:
@@ -2127,8 +2215,21 @@ def main():
             current_render_fps = clock.get_fps()
             render_fps_history.append(TimestampedValue(current_render_fps))
 
+            # Расчет LPS с той же частотой, что и FPS
+            current_time = time.perf_counter()
+            frame_time = current_time - last_frame_time
+            if frame_time > 0:  # Избегаем деления на ноль
+                current_actual_lps = lps_steps_since_last_calc / frame_time
+                # Сглаживание значений LPS по 30 последним значениям
+                last_lps_values.append(current_actual_lps)  # Добавляем новое значение (старое автоматически удаляется)
+                smoothed_lps = sum(last_lps_values) / len(last_lps_values)  # Среднее за последние 30 значений
+                actual_lps_display = smoothed_lps  # Обновляем отображаемое значение
+                actual_lps_history.append(TimestampedValue(smoothed_lps))  # Сохраняем сглаженное значение
+                lps_steps_since_last_calc = 0  # Сбрасываем счетчик шагов логики
+                last_frame_time = current_time  # Обновляем время предыдущего кадра
+
             time_since_last_logic_update += dt_seconds
-            lps_calc_timer += dt_seconds # Accumulate time for actual LPS calculation
+            # lps_calc_timer += dt_seconds # Accumulate time for actual LPS calculation - больше не нужно
 
             mouse_pos = pygame.mouse.get_pos()
             is_panel_hovered = speed_panel_rect.collidepoint(mouse_pos)
@@ -2188,8 +2289,7 @@ def main():
                         pause_screen(screen, clock)
                         # Reset time accumulator after unpausing to avoid sudden jump
                         time_since_last_logic_update = 0.0
-                        lps_calc_timer = 0.0 # Reset LPS counter timer too
-
+                        
 
                     # Theme switching
                     if event.key == pygame.K_q or event.key == pygame.K_e:
@@ -2251,16 +2351,6 @@ def main():
 
                 # Update time spent on logic
                 time_spent_on_logic_this_frame = time.perf_counter() - logic_start_time
-
-            # --- Calculate Actual LPS periodically and add to history with timestamp ---
-            if lps_calc_timer >= LPS_CALC_INTERVAL:
-                if lps_calc_timer > 0: # Avoid division by zero
-                    current_actual_lps = lps_steps_since_last_calc / lps_calc_timer
-                    actual_lps_display = current_actual_lps # Update display value
-                    actual_lps_history.append(TimestampedValue(current_actual_lps))
-                # Reset counters for the next interval
-                lps_calc_timer = 0.0
-                lps_steps_since_last_calc = 0
 
             # --- Handle Collision (after logic loop for the frame) ---
             if collision_detected_in_frame:
@@ -2332,8 +2422,8 @@ def main():
             # Draw background for the LPS widget
             pygame.draw.rect(lps_widget_surface, lps_bg_color_opaque, lps_widget_surface.get_rect(), border_radius=4)
 
-            # Draw the graph using the history of target LPS (snake.speed)
-            draw_lps_graph(lps_widget_surface, target_lps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'])
+            # Draw the graph using the history of *actual* calculated LPS
+            draw_lps_graph(lps_widget_surface, actual_lps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'], font=font_graph_label)
 
             # Display Min/Avg/Max based on the *actual* calculated LPS history
             # Filter for only the last 5 seconds
@@ -2386,7 +2476,7 @@ def main():
             pygame.draw.rect(fps_widget_surface, fps_bg_color_opaque, fps_widget_surface.get_rect(), border_radius=4)
 
             # Draw the graph using the history of actual render FPS
-            draw_fps_graph(fps_widget_surface, render_fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'], target_fps=current_max_fps)
+            draw_fps_graph(fps_widget_surface, render_fps_history, graph_x_rel, graph_y_rel, graph_width, graph_height, color=current_colors['text_highlight'], target_fps=current_max_fps, font=font_graph_label)
 
             # Display Min/Avg/Max based on the actual render FPS history (last 5 seconds)
             min_render_fps = 0.0
