@@ -540,21 +540,29 @@ class PathFind:
         path.reverse()
         return path
 
-    def find_path(self, start: Tuple[int, int], goal: Tuple[int, int], snake_positions: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def find_path(self, start: Tuple[int, int], goal: Tuple[int, int], snake_positions: List[Tuple[int, int]], is_target_food: bool = True) -> List[Tuple[int, int]]:
         """
         Находит кратчайший путь с помощью A*, УЧИТЫВАЯ движение хвоста змейки.
         Клетка считается проходимой, если к моменту достижения ее змейкой,
         сегмент хвоста, который ее занимал, уже исчезнет.
+        is_target_food влияет только на то, как будет интерпретирован путь в вызывающем коде
+        (например, для is_path_safe_to_food), сам поиск пути A* не меняется.
         """
         snake_length = len(snake_positions)
+        # Оптимизация: Преобразование в set для быстрой проверки принадлежности
         snake_body_indices = {pos: i for i, pos in enumerate(snake_positions)}
+        obstacles_set = set(snake_positions) # Для быстрой проверки статических препятствий
 
         open_set_heap = [(self._heuristic(start, goal), 0, start)]
         came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {start: None}
         g_score: Dict[Tuple[int, int], float] = {start: 0}
+        # Множество для хранения узлов в open_set_heap для быстрой проверки
+        open_set_nodes = {start} 
 
         while open_set_heap:
+            # Извлекаем узел с наименьшей f_cost
             current_f_cost, current_g_cost, current_pos = heapq.heappop(open_set_heap)
+            open_set_nodes.remove(current_pos) # Удаляем из множества
 
             if current_pos == goal:
                 return self.reconstruct_path(came_from, goal)
@@ -562,20 +570,34 @@ class PathFind:
             for neighbor_pos in self.get_neighbors(current_pos):
                 tentative_g_cost = current_g_cost + 1
 
+                # Проверка на столкновение с движущимся хвостом
                 is_collision = False
                 if neighbor_pos in snake_body_indices:
                     segment_index = snake_body_indices[neighbor_pos]
+                    # Столкновение, если время достижения клетки (tentative_g_cost)
+                    # меньше времени, когда хвост освободит эту клетку (snake_length - segment_index)
                     if tentative_g_cost < snake_length - segment_index:
                         is_collision = True
 
+                # Если нет столкновения с хвостом, проверяем дальше
                 if not is_collision:
+                    # Проверяем, лучше ли этот путь, чем предыдущий найденный к соседу
                     if tentative_g_cost < g_score.get(neighbor_pos, float('inf')):
                         came_from[neighbor_pos] = current_pos
                         g_score[neighbor_pos] = tentative_g_cost
                         f_cost = tentative_g_cost + self._heuristic(neighbor_pos, goal)
-                        heapq.heappush(open_set_heap, (f_cost, tentative_g_cost, neighbor_pos))
+                        # Добавляем в кучу и множество, только если его там еще нет или новый путь лучше
+                        if neighbor_pos not in open_set_nodes:
+                            heapq.heappush(open_set_heap, (f_cost, tentative_g_cost, neighbor_pos))
+                            open_set_nodes.add(neighbor_pos)
+                        # Если узел уже в куче, но мы нашли лучший путь - нужно обновить его приоритет.
+                        # Прямое обновление приоритета в heapq сложно, проще добавить новый узел.
+                        # Старый узел с худшим приоритетом останется, но будет извлечен позже и проигнорирован,
+                        # так как g_score[neighbor_pos] уже будет обновлен на меньшее значение.
+                        # (Это стандартный подход при работе с heapq без поддержки decrease-key)
 
-        return []
+
+        return [] # Путь не найден
 
 def generate_accordion_snake(percentage: int, grid_width: int, grid_height: int) -> Tuple[Deque[Tuple[int, int]], Tuple[int, int]]:
     """Генерирует начальную позицию змейки 'гармошкой' заданной длины."""
@@ -664,6 +686,9 @@ class Snake:
         self._colors_theme_cache = current_theme
         self._neighboring_segments_cache: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {}
         self._update_caches()
+        self.hamiltonian_path: List[Tuple[int, int]] = self._generate_hamiltonian_cycle_path()
+        self.current_hamiltonian_target_index: Optional[int] = None # Индекс цели на цикле
+        self.is_following_cycle_perfectly = False # НОВЫЙ ФЛАГ
 
         if initial_fill_percentage > 0:
             generated_positions, generated_direction = generate_accordion_snake(
@@ -801,74 +826,136 @@ class Snake:
     def auto_move(self, food_pos):
         """Выбор направления и движение вперед в авто-режиме."""
         head = self.get_head_position()
+        fill_percentage = self.length / (GRID_WIDTH * GRID_HEIGHT)
+        force_survival_fill_mode = fill_percentage > 0.80 # Используем твой порог 80%
 
-        if self.survival_mode_steps_remaining > 0:
-            self.survival_mode_steps_remaining -= 1
-            survival_direction = self.find_survival_move()
-            if not survival_direction:
-                survival_direction = self.find_immediate_safe_direction()
+        path_calculated_for_cycle = False # Флаг расчета пути по циклу (не обязательно идеального)
 
-            if survival_direction:
-                self.next_direction = survival_direction
-            else:
-                self.next_direction = self.direction
-
-            self.current_path = []
+        if force_survival_fill_mode:
+            # --- Режим >80% ---
+            self.current_path = [] # Сбрасываем старые пути
             self.path = []
             self.recalculate_path = False
+            self.survival_mode_steps_remaining = 0
 
-        else:
-            if self.recalculate_path or not self.current_path:
-                path_to_food = self.path_find.find_path(head, food_pos, list(self.positions))
+            # Проверяем, следуем ли мы уже идеально циклу
+            if self.is_following_cycle_perfectly:
+                # --- Идеальное следование циклу ---
+                try:
+                    head_index = self.hamiltonian_path.index(head)
+                    target_index = (head_index + 1) % len(self.hamiltonian_path)
+                    target_cell = self.hamiltonian_path[target_index]
 
-                if path_to_food and self.is_path_safe_to_food(path_to_food):
-                    self.current_path = path_to_food
-                    self.path = self.current_path
-                    self.recalculate_path = False
-                    if len(self.current_path) > 1:
-                        self.next_direction = self.get_direction_to(self.current_path[1])
-                    else:
-                        self.next_direction = self.direction
+                    # Прямой расчет направления
+                    dx = target_cell[0] - head[0]; dy = target_cell[1] - head[1]
+                    if abs(dx) > GRID_WIDTH / 2: dx = - (GRID_WIDTH - abs(dx)) * (1 if dx > 0 else -1)
+                    if abs(dy) > GRID_HEIGHT / 2: dy = - (GRID_HEIGHT - abs(dy)) * (1 if dy > 0 else -1)
+                    if dx != 0: dx = dx // abs(dx); dy = 0
+                    elif dy != 0: dy = dy // abs(dy); dx = 0
+                    else: dx, dy = self.direction # На случай head == target_cell (не должно быть)
+                    self.next_direction = (dx, dy)
+                    path_calculated_for_cycle = True # Считаем, что движемся по циклу
 
-                else:
-                    self.current_path = []
-                    self.path = []
-                    survival_direction = self.find_survival_move()
-
-                    if survival_direction:
-                        self.next_direction = survival_direction
-                        self.survival_mode_steps_remaining = SURVIVAL_MODE_DURATION
-                        self.recalculate_path = False
-                    else:
-                        safe_immediate_direction = self.find_immediate_safe_direction()
-                        if safe_immediate_direction:
-                            self.next_direction = safe_immediate_direction
-                        else:
-                            self.next_direction = self.direction
-                        self.recalculate_path = True
+                except ValueError: # Голова внезапно слетела с цикла? Откат.
+                    print(f"WARN: Head {head} lost from Hamiltonian cycle while supposedly following!")
+                    self.is_following_cycle_perfectly = False
+                    self.next_direction = self._find_standard_survival_move() or self.direction
 
             else:
-                if len(self.current_path) > 1:
-                    self.next_direction = self.get_direction_to(self.current_path[1])
-                else:
-                    self.recalculate_path = True
-                    self.current_path = []
-                    self.path = []
-                    self.next_direction = self.find_immediate_safe_direction() or self.direction
+                # --- Попытка вернуться на цикл или стандартное выживание ---
+                try:
+                    head_index = self.hamiltonian_path.index(head)
+                    path_found_on_cycle = False
+                    for lookahead_steps in [1, 2]: # Пробуем +1 и +2 шага
+                        target_index = (head_index + lookahead_steps) % len(self.hamiltonian_path)
+                        target_cell = self.hamiltonian_path[target_index]
+                        path_to_cycle_target = self.path_find.find_path(head, target_cell, list(self.positions), is_target_food=False)
 
+                        if path_to_cycle_target and self._is_path_to_target_safe(path_to_cycle_target):
+                            self.current_path = path_to_cycle_target
+                            self.path = path_to_cycle_target
+                            if len(self.current_path) > 1:
+                                # Расчет направления (как было раньше)
+                                next_step = self.current_path[1]
+                                dx = next_step[0] - head[0]; dy = next_step[1] - head[1]
+                                if abs(dx) > GRID_WIDTH / 2: dx = - (GRID_WIDTH - abs(dx)) * (1 if dx > 0 else -1)
+                                if abs(dy) > GRID_HEIGHT / 2: dy = - (GRID_HEIGHT - abs(dy)) * (1 if dy > 0 else -1)
+                                if dx != 0: dx = dx // abs(dx); dy = 0
+                                elif dy != 0: dy = dy // abs(dy); dx = 0
+                                else: dx, dy = self.direction
+                                self.next_direction = (dx, dy)
+
+                                calc_next_pos = ((head[0] + dx) % GRID_WIDTH, (head[1] + dy) % GRID_HEIGHT)
+                                if calc_next_pos != next_step:
+                                    print(f"WARN: Cycle Direction mismatch! Head:{head}, Next:{next_step}, Dir:{self.next_direction}")
+                                    self.next_direction = self._find_standard_survival_move() or self.direction
+                                    path_calculated_for_cycle = False
+                                else:
+                                    path_calculated_for_cycle = True
+                                    path_found_on_cycle = True
+                                    break # Нашли путь
+                            else:
+                                self.next_direction = self._find_standard_survival_move() or self.direction
+                                path_calculated_for_cycle = False
+                                break # Странный путь, откат
+
+                    if not path_found_on_cycle: # Если не нашли безопасный путь к +1 или +2
+                        self.next_direction = self._find_standard_survival_move() or self.direction
+                        path_calculated_for_cycle = False
+
+                except ValueError: # Голова не на цикле - используем выживание
+                    print(f"WARN: Head {head} not on Hamiltonian cycle during recovery attempt!")
+                    self.next_direction = self._find_standard_survival_move() or self.direction
+                    path_calculated_for_cycle = False
+
+        else:
+            # --- Стандартный режим (<80%) ---
+            # ... (логика без изменений, использует _find_standard_survival_move) ...
+            if self.survival_mode_steps_remaining > 0:
+                 self.survival_mode_steps_remaining -= 1
+                 survival_direction = self._find_standard_survival_move()
+                 if not survival_direction: survival_direction = self.find_immediate_safe_direction()
+                 self.next_direction = survival_direction or self.direction
+                 self.current_path = []; self.path = []; self.recalculate_path = False
+            else:
+                 if self.recalculate_path or not self.current_path:
+                      path_to_food = self.path_find.find_path(head, food_pos, list(self.positions), is_target_food=True)
+                      if path_to_food and self.is_path_safe_to_food(path_to_food):
+                          self.current_path = path_to_food; self.path = self.current_path; self.recalculate_path = False
+                          if len(self.current_path) > 1: self.next_direction = self.get_direction_to(self.current_path[1])
+                          else: self.next_direction = self._find_standard_survival_move() or self.direction; self.recalculate_path = True; self.current_path = []; self.path = []
+                      else:
+                          self.current_path = []; self.path = []
+                          survival_direction = self._find_standard_survival_move()
+                          if survival_direction:
+                              self.next_direction = survival_direction; self.survival_mode_steps_remaining = SURVIVAL_MODE_DURATION; self.recalculate_path = False
+                          else:
+                              self.next_direction = self.find_immediate_safe_direction() or self.direction; self.recalculate_path = True
+                 else:
+                      if len(self.current_path) > 1: self.next_direction = self.get_direction_to(self.current_path[1])
+                      else: self.recalculate_path = True; self.current_path = []; self.path = []; self.next_direction = self._find_standard_survival_move() or self.direction
+
+
+        # --- Общее для всех режимов: Движение ---
         self.direction = self.next_direction
-        cur = self.get_head_position()
+        cur = self.get_head_position() # cur == head
         x, y = self.direction
         new_head_pos = ((cur[0] + x) % GRID_WIDTH, (cur[1] + y) % GRID_HEIGHT)
-        collision = self.move_forward(new_head_pos)
+        collision = self.move_forward(new_head_pos) # ВАЖНО: Это обновляет self.positions
 
-        if self.survival_mode_steps_remaining == 0 and not self.recalculate_path and self.current_path and not collision:
-             if self.current_path[0] == cur:
+        # --- Обновляем флаг идеального следования ПОСЛЕ хода ---
+        if force_survival_fill_mode:
+            self.is_following_cycle_perfectly = self._check_perfect_cycle_following()
+        else:
+            self.is_following_cycle_perfectly = False # Сбрасываем флаг вне режима >80%
+
+        # --- Обновление пути (если это был не путь по циклу) ---
+        if not path_calculated_for_cycle and self.survival_mode_steps_remaining == 0 and not self.recalculate_path and self.current_path and not collision:
+             if self.current_path and self.current_path[0] == cur:
                  self.current_path.pop(0)
-             else:
+             elif self.recalculate_path is False:
                  self.recalculate_path = True
-                 self.current_path = []
-                 self.path = []
+                 self.current_path = []; self.path = []
 
         return collision
 
@@ -962,94 +1049,198 @@ class Snake:
 
         return None
 
-    def find_survival_move(self) -> Tuple[int, int] | None:
+    def _get_all_empty_cells(self, obstacles: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Возвращает множество всех пустых клеток на поле."""
+        # Можно оптимизировать, кэшируя all_cells, если GRID_WIDTH/HEIGHT не меняются
+        all_cells = set((x, y) for x in range(GRID_WIDTH) for y in range(GRID_HEIGHT))
+        return all_cells - obstacles
+
+    def _calculate_fragmentation_score(self, obstacles: Set[Tuple[int, int]]) -> int:
         """
-        Находит лучший ход для выживания: выбирает направление, которое после хода
-        оставляет максимально большую достижимую пустую область (контроль территории).
-        При равенстве областей выбирает ход, максимизирующий путь до хвоста.
-        Возвращает направление или None, если безопасных ходов нет.
+        Вычисляет 'счет фрагментации' - количество несвязанных регионов пустых клеток.
+        Меньше -> лучше. Использует BFS для обхода.
         """
-        best_direction = None
-        max_freedom = -1 # Теперь это будет размер области, а не длина пути
-        max_tail_path_len_for_best_freedom = -1 # Для разрешения ничьих
+        empty_cells = self._get_all_empty_cells(obstacles)
+        if not empty_cells:
+            return 0 # Нет пустых клеток - нет фрагментации
+
+        visited_overall = set()
+        region_count = 0
+
+        # Продолжаем, пока не посетим все пустые клетки
+        while len(visited_overall) < len(empty_cells):
+            region_count += 1
+            # Находим стартовую клетку для нового региона (любую не посещенную)
+            try:
+                 # iter(empty_cells - visited_overall) создает итератор по разности множеств
+                 start_node = next(iter(empty_cells - visited_overall))
+            except StopIteration:
+                 # Этого не должно произойти, если while условие верно, но для безопасности
+                 break 
+
+            # Запускаем BFS для поиска всех клеток в текущем регионе
+            q = deque([start_node])
+            visited_overall.add(start_node) # Отмечаем как посещенную глобально
+
+            while q:
+                current_pos = q.popleft()
+                # Проверяем соседей
+                for neighbor_pos in self.path_find.get_neighbors(current_pos):
+                    # Сосед должен быть пустым и еще не посещенным глобально
+                    if neighbor_pos in empty_cells and neighbor_pos not in visited_overall:
+                        visited_overall.add(neighbor_pos)
+                        q.append(neighbor_pos)
+                        
+        # Возвращаем количество найденных регионов
+        return region_count
+
+    def _find_standard_survival_move(self) -> Tuple[int, int] | None:
+        """
+        Стандартный режим выживания:
+        1. Максимизирует достижимую пустую область от головы.
+        2. При равенстве областей, максимизирует путь до хвоста.
+        3. Если все эвристики равны, выбирает случайно из лучших.
+        """
+        candidate_directions_data = {} # direction -> (freedom, tail_path_len)
+        max_freedom = -1
 
         head = self.get_head_position()
-        # Фильтруем сразу невалидные ходы (назад и в себя, кроме хвоста если длина > 1)
         possible_directions = []
-        current_positions_set = self.positions_set # Используем кэш set
+        current_positions_set = self.positions_set
         tail_pos = self.positions[-1] if len(self.positions) > 1 else None
-
         for d in [UP, DOWN, LEFT, RIGHT]:
-            # Нельзя разворачиваться на 180 градусов
-            if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1):
-                continue
-
+            if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1): continue
             next_head = ((head[0] + d[0]) % GRID_WIDTH, (head[1] + d[1]) % GRID_HEIGHT)
-
-            # Нельзя идти в себя (кроме хвоста, который освободится)
             is_collision = next_head in current_positions_set and next_head != tail_pos
-            if not is_collision:
-                possible_directions.append(d)
-        
-        # Если есть только один безопасный ход (вероятно, на хвост), берем его
-        if len(possible_directions) == 1:
-            return possible_directions[0]
-            
-        # Если безопасных ходов нет (даже на хвост) - это плохо
-        if not possible_directions:
-             # Попытаемся найти ход хотя бы на хвост, если он есть
-             for d in [UP, DOWN, LEFT, RIGHT]:
-                 if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1):
-                     continue
-                 next_head = ((head[0] + d[0]) % GRID_WIDTH, (head[1] + d[1]) % GRID_HEIGHT)
-                 if next_head == tail_pos:
-                     return d # Отчаянный ход на хвост
-             return None # Совсем нет ходов
+            if not is_collision: possible_directions.append(d)
 
-        current_positions_list = list(self.positions) # Для симуляции
+        if not possible_directions:
+             for d in [UP, DOWN, LEFT, RIGHT]:
+                 if len(self.positions) > 1 and d == (self.direction[0] * -1, self.direction[1] * -1): continue
+                 next_head = ((head[0] + d[0]) % GRID_WIDTH, (head[1] + d[1]) % GRID_HEIGHT)
+                 if next_head == tail_pos: return d
+             return None
+        if len(possible_directions) == 1: return possible_directions[0]
+
+        current_positions_list = list(self.positions)
+        safe_directions_after_sim = set(possible_directions) # Начнем со всех возможных
 
         for direction in possible_directions:
             next_head = ((head[0] + direction[0]) % GRID_WIDTH, (head[1] + direction[1]) % GRID_HEIGHT)
-
-            # Симулируем ход
-            # Начальное состояние передаем как список
             sim_snake_list = self.simulate_move([head, next_head], grows=False, initial_state=current_positions_list)
-            if sim_snake_list is None: # Симуляция показала самопересечение (хотя первичная проверка прошла)
+            if sim_snake_list is None:
+                safe_directions_after_sim.discard(direction)
                 continue
 
             sim_head = sim_snake_list[0]
             sim_obstacles = set(sim_snake_list)
-
-            # Вычисляем размер доступной территории
             freedom = self._calculate_reachable_empty_space(sim_head, sim_obstacles)
 
-            if freedom > max_freedom:
-                max_freedom = freedom
-                # При нахождении новой лучшей области, также вычисляем путь до хвоста
+            if freedom >= max_freedom:
                 sim_tail = sim_snake_list[-1]
-                path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
-                max_tail_path_len_for_best_freedom = len(path_to_tail) if path_to_tail else 0
-                best_direction = direction
-            elif freedom == max_freedom and freedom != -1: # Если область такая же, сравниваем путь до хвоста
-                sim_tail = sim_snake_list[-1]
-                path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list)
-                current_tail_path_len = len(path_to_tail) if path_to_tail else 0
-                
-                if current_tail_path_len > max_tail_path_len_for_best_freedom:
-                    max_tail_path_len_for_best_freedom = current_tail_path_len
-                    best_direction = direction # Обновляем направление, так как путь до хвоста лучше
-            # Опциональный Tie-breaker: если доступная область одинакова,
-            # можно добавить старую логику с путем до хвоста. Пока опустим для простоты.
-            # elif freedom == max_freedom and best_direction is not None:
-            #     # Сравниваем пути до хвоста для текущего лучшего и нового направления
-            #     pass
+                path_to_tail = self.path_find.find_path(sim_head, sim_tail, sim_snake_list, is_target_food=False) # Цель - хвост, не еда
+                tail_path_len = len(path_to_tail) if path_to_tail else 0
 
-        # Если best_direction так и не нашелся (например, все симуляции вели в тупик),
-        # попробуем вернуть любой безопасный ход из первоначального списка
-        if best_direction is None and possible_directions:
-             return random.choice(possible_directions) # Или первый попавшийся
+                if freedom > max_freedom:
+                     max_freedom = freedom
+                candidate_directions_data[direction] = (freedom, tail_path_len)
 
-        return best_direction
+        # --- Фильтрация кандидатов ---
+        # Убираем направления, которые симуляция посчитала небезопасными
+        valid_candidates = {d: data for d, data in candidate_directions_data.items() if d in safe_directions_after_sim}
+
+        if not valid_candidates:
+             return random.choice(list(safe_directions_after_sim)) if safe_directions_after_sim else (self.find_immediate_safe_direction() or self.direction)
+
+        # Оставляем только тех, у кого максимальный freedom
+        current_max_freedom = -1
+        for free, _ in valid_candidates.values():
+             if free > current_max_freedom: current_max_freedom = free
+        best_freedom_candidates = {d: data for d, data in valid_candidates.items() if data[0] == current_max_freedom}
+
+        if not best_freedom_candidates: return random.choice(list(safe_directions_after_sim)) if safe_directions_after_sim else (self.find_immediate_safe_direction() or self.direction)
+        if len(best_freedom_candidates) == 1: return list(best_freedom_candidates.keys())[0]
+
+        # Фильтруем по максимальной длине пути до хвоста
+        max_tail_len = -1
+        for _, tail_len in best_freedom_candidates.values():
+             if tail_len > max_tail_len: max_tail_len = tail_len
+        best_tail_len_candidates = {d: data for d, data in best_freedom_candidates.items() if data[1] == max_tail_len}
+
+        # --- Финальный случайный выбор ---
+        final_choices = list(best_tail_len_candidates.keys())
+        return random.choice(final_choices) if final_choices else (self.find_immediate_safe_direction() or self.direction)
+
+    def _is_path_to_target_safe(self, path_to_target: List[Tuple[int, int]]) -> bool:
+         """Проверяет, безопасен ли путь к ЦЕЛИ (не еде)."""
+         if not path_to_target: return False
+         sim_snake_after_reach = self.simulate_move(path_to_target, grows=False, initial_state=list(self.positions))
+         if sim_snake_after_reach:
+             sim_head = sim_snake_after_reach[0]
+             sim_tail = sim_snake_after_reach[-1]
+             path_to_tail_after_reach = self.path_find.find_path(sim_head, sim_tail, sim_snake_after_reach, is_target_food=False)
+             return bool(path_to_tail_after_reach)
+         return False
+
+    def _find_empty_regions(self, obstacles: Set[Tuple[int, int]]) -> List[List[Tuple[int, int]]]:
+        """Находит все несвязанные регионы пустых клеток."""
+        empty_cells = self._get_all_empty_cells(obstacles)
+        if not empty_cells:
+            return []
+
+        visited_overall = set()
+        regions = []
+
+        while len(visited_overall) < len(empty_cells):
+            current_region = []
+            # Находим стартовую клетку для нового региона
+            try:
+                 start_node = next(iter(empty_cells - visited_overall))
+            except StopIteration:
+                 break
+
+            q = deque([start_node])
+            visited_overall.add(start_node)
+            current_region.append(start_node)
+
+            while q:
+                current_pos = q.popleft()
+                for neighbor_pos in self.path_find.get_neighbors(current_pos):
+                    if neighbor_pos in empty_cells and neighbor_pos not in visited_overall:
+                        visited_overall.add(neighbor_pos)
+                        q.append(neighbor_pos)
+                        current_region.append(neighbor_pos)
+
+            if current_region:
+                regions.append(current_region)
+
+        return regions
+
+    def _find_closest_cell_in_region(self, start_pos: Tuple[int, int], region_cells: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+        """Находит ближайшую клетку из region_cells к start_pos с помощью BFS."""
+        if not region_cells: return None
+        region_set = set(region_cells) # Для быстрой проверки принадлежности
+        q = deque([(start_pos, 0)]) # (position, distance)
+        visited = {start_pos}
+
+        while q:
+            current_pos, dist = q.popleft()
+
+            if current_pos in region_set:
+                return current_pos # Нашли первую (ближайшую)
+
+            # Ищем соседей, не являющихся препятствиями (в данном контексте препятствия - это тело змеи)
+            for neighbor_pos in self.path_find.get_neighbors(current_pos):
+                # Не проверяем на столкновение с хвостом здесь, только базовый BFS
+                if neighbor_pos not in self.positions_set and neighbor_pos not in visited:
+                    visited.add(neighbor_pos)
+                    q.append((neighbor_pos, dist + 1))
+                # Если сосед - это искомая клетка региона
+                elif neighbor_pos in region_set and neighbor_pos not in visited:
+                     return neighbor_pos # Нашли ближайшего соседа в регионе
+
+        # Если BFS завершился, а клетка не найдена (маловероятно, если регион существует)
+        return None # Или можно вернуть случайную из региона? Пока None
 
     def is_path_safe_to_food(self, path_to_food: List[Tuple[int, int]]) -> bool:
         """
@@ -1151,6 +1342,48 @@ class Snake:
                     visited.add(neighbor_pos)
                     q.append(neighbor_pos)
         return count
+
+    def _generate_hamiltonian_cycle_path(self) -> List[Tuple[int, int]]:
+        """Генерирует простой змеевидный Гамильтонов цикл для всего поля."""
+        path = []
+        for y in range(GRID_HEIGHT):
+            if y % 2 == 0: # Двигаемся вправо
+                for x in range(GRID_WIDTH):
+                    path.append((x, y))
+            else: # Двигаемся влево
+                for x in range(GRID_WIDTH - 1, -1, -1):
+                    path.append((x, y))
+        print(f"Generated Hamiltonian cycle with {len(path)} steps.") # Отладка
+        return path
+
+    # НОВЫЙ МЕТОД ПРОВЕРКИ
+    def _check_perfect_cycle_following(self):
+        """Проверяет, совпадает ли тело змейки с участком Гамильтонова цикла."""
+        if not self.hamiltonian_path: return False
+
+        positions_list = list(self.positions)
+        snake_len = len(positions_list)
+        # Слишком короткая змейка или нет пути - не может идеально следовать
+        if snake_len <= 1 or not self.hamiltonian_path:
+             return False
+
+        head = positions_list[0]
+        try:
+            head_index = self.hamiltonian_path.index(head)
+        except ValueError:
+            return False # Голова не на цикле
+
+        path_len = len(self.hamiltonian_path)
+        for i in range(snake_len):
+            snake_segment = positions_list[i]
+            # Индекс на цикле для i-го сегмента тела (голова - 0)
+            expected_cycle_index = (head_index - i + path_len) % path_len
+            expected_pos = self.hamiltonian_path[expected_cycle_index]
+
+            if snake_segment != expected_pos:
+                return False # Сегмент не совпал с циклом
+
+        return True # Все сегменты совпали
 
 class Food:
     def __init__(self):
