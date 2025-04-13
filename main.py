@@ -685,7 +685,6 @@ class Snake:
         self._last_cache_segments = 0
         self._colors_theme_cache = current_theme
         self._neighboring_segments_cache: Dict[Tuple[int, int], Set[Tuple[int, int]]] = {}
-        self._update_caches()
         self.hamiltonian_path: List[Tuple[int, int]] = self._generate_hamiltonian_cycle_path()
 
         if initial_fill_percentage > 0:
@@ -728,20 +727,46 @@ class Snake:
             self._colors_theme_cache = current_theme
             
     def _update_neighboring_segments_cache(self):
-        """Обновляет кэш соседних сегментов."""
+        """Обновляет кэш соседних сегментов (оптимизированная версия)."""
         self._neighboring_segments_cache = {}
         num_segments = len(self.positions)
-        for i, pos in enumerate(self.positions):
-            neighbors = set()
-            if i > 0:
-                prev_pos = self.positions[i-1]
-                neighbors.add(prev_pos)
-            if i < num_segments - 1:
-                next_pos = self.positions[i+1]
-                neighbors.add(next_pos)
-            if neighbors:
-                self._neighboring_segments_cache[pos] = neighbors
-                
+        if num_segments <= 1:
+            return # Нет соседей для змейки из 0 или 1 сегмента
+
+        # Используем итератор для эффективного доступа к соседним элементам
+        iter_pos = iter(self.positions)
+
+        prev_pos = None
+        current_pos = next(iter_pos)
+        # Пытаемся получить следующий элемент для обработки змейки > 1 сегмента
+        try:
+            next_pos = next(iter_pos)
+            # Голова имеет только следующего соседа
+            self._neighboring_segments_cache[current_pos] = {next_pos}
+            prev_pos = current_pos
+            current_pos = next_pos
+        except StopIteration:
+            # Это произойдет только если змейка состоит из 2 сегментов
+            # В оригинальной версии prev_pos головы был None, а у хвоста была только голова.
+            # Чтобы сохранить консистентность, второй сегмент (хвост) должен иметь соседа - голову.
+            # Голова уже обработана выше.
+            if prev_pos is not None: # Убедимся, что prev_pos (голова) существует
+                self._neighboring_segments_cache[current_pos] = {prev_pos}
+            return # Завершаем, если было всего 2 сегмента
+
+        # Обрабатываем средние сегменты
+        while True:
+            try:
+                next_pos = next(iter_pos)
+                # Текущий сегмент имеет предыдущий и следующий
+                self._neighboring_segments_cache[current_pos] = {prev_pos, next_pos}
+                prev_pos = current_pos
+                current_pos = next_pos
+            except StopIteration: # Дошли до последнего сегмента (хвоста)
+                # Последний сегмент (current_pos) имеет только предыдущего (prev_pos)
+                self._neighboring_segments_cache[current_pos] = {prev_pos}
+                break # Завершаем цикл
+
     def _update_caches(self):
         """Обновляет все кэши."""
         num_segments = len(self.positions)
@@ -1589,7 +1614,7 @@ def settings_screen(surface, clock, current_speed, current_volume, mute, current
     widget_x = SCREEN_WIDTH // 2 - slider_width // 2
     y_pos = title_rect.bottom + 50
 
-    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 5000, current_speed, "Game Speed (LPS)", power=2.5)
+    speed_slider = Slider(widget_x, y_pos, slider_width, slider_height, 5, 99999, current_speed, "Game Speed (LPS)", power=5)
     y_pos += 70
 
     max_fps_slider = Slider(widget_x, y_pos, slider_width, slider_height, 15, 240, current_max_fps, "Max Render FPS")
@@ -2304,7 +2329,7 @@ def draw_fps_graph(surface: Surface, history: Deque[TimestampedValue], x: int, y
     label_rect = label_surf.get_rect(bottomleft=(x + 3, y + height - 3))
     surface.blit(label_surf, label_rect)
 
-MAX_LOGIC_TIME_PERCENT_PER_FRAME = 0.85 # Max % of frame time for logic
+MAX_LOGIC_TIME_PER_FRAME = 0.85 # Max % of frame time for logic
 STATS_DISPLAY_SECONDS = 5.0 # Display stats for the last 5 seconds
 
 def main():
@@ -2412,8 +2437,8 @@ def main():
                                    speed_panel_rect.y + slider_margin_top,
                                    speed_panel_rect.width - 2 * slider_margin_h,
                                    slider_height,
-                                   min_speed, 5000, snake.speed, "",
-                                   power=2.5)
+                                   min_speed, 99999, snake.speed, "",
+                                   power=5)
 
         panel_alpha = 76
         time_since_last_logic_update = 0.0 # Time accumulator for logic steps
@@ -2492,7 +2517,7 @@ def main():
 
                     # Speed adjustment keys
                     if event.key in [pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS]:
-                        snake.speed = min(5000, snake.speed + 10)
+                        snake.speed = min(99999, snake.speed + 10)
                         game_speed_slider.value = snake.speed
                         game_speed_slider.update_handle_pos()
                         time_since_last_logic_update = 0.0 # Reset accumulator
@@ -2546,7 +2571,7 @@ def main():
             fill_percentage = snake.length / (GRID_WIDTH * GRID_HEIGHT)
             
             # При высоком заполнении увеличиваем доступное время на логику
-            adjusted_max_logic_percent = MAX_LOGIC_TIME_PERCENT_PER_FRAME
+            adjusted_max_logic_percent = MAX_LOGIC_TIME_PER_FRAME
             if fill_percentage > 0.95:
                 # На финальном этапе заполнения даём больше времени на логику
                 adjusted_max_logic_percent = 0.95  # 95% времени кадра на логику
